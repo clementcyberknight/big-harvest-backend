@@ -9,6 +9,7 @@ import { env } from "../config/env.js";
 import { GAME_CROPS } from "./crops.js";
 
 const EVENT_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
+const EVENT_DURATION_MS = 30 * 60 * 1000;
 
 const VALID_CROP_IDS = new Set(GAME_CROPS.map((c) => c.id));
 
@@ -73,6 +74,7 @@ export interface MarketEvent {
   impact_multiplier: number;
   player_tip: string;
   generated_at: string;
+  expires_at: string;
 }
 
 // ── In-memory state ──────────────────────────────────────────────────────────
@@ -173,6 +175,7 @@ Season-specific ideas for ${season}:
       impact_multiplier: clampedMultiplier,
       player_tip: object.player_tip,
       generated_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + EVENT_DURATION_MS).toISOString(),
     };
   } catch (err) {
     console.error("[events] Failed to generate market event:", err);
@@ -186,6 +189,7 @@ export function getActiveEvent(): MarketEvent | null {
 
 export function getEventMultiplierFor(cropId: string): number {
   if (!activeEvent) return 1.0;
+  if (Date.now() > new Date(activeEvent.expires_at).getTime()) return 1.0;
   if (!activeEvent.affect.includes(cropId)) return 1.0;
   return activeEvent.impact_multiplier;
 }
@@ -230,9 +234,29 @@ export function getEventLog(): {
 export function startEventEngine(
   onEvent: (event: MarketEvent | null) => void,
 ): NodeJS.Timeout {
+  let expiryTimer: NodeJS.Timeout | null = null;
+
   const tick = async () => {
+    if (expiryTimer) {
+      clearTimeout(expiryTimer);
+      expiryTimer = null;
+    }
+
     const event = await refreshEvent();
     onEvent(event);
+
+    if (event) {
+      const msUntilExpiry = new Date(event.expires_at).getTime() - Date.now();
+      expiryTimer = setTimeout(
+        () => {
+          activeEvent = null;
+          expiryTimer = null;
+          console.log("[events] ⏰ Event expired — prices reset to normal");
+          onEvent(null);
+        },
+        Math.max(0, msUntilExpiry),
+      );
+    }
   };
 
   void tick();

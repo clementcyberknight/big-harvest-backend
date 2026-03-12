@@ -77,6 +77,7 @@ message GameEvent {
   double impact_multiplier = 5;
   string player_tip = 6;
   int64 generated_at = 7;       // unix ms
+  int64 expires_at = 8;         // unix ms — when prices reset to normal
 }
 
 message ServerMessage {

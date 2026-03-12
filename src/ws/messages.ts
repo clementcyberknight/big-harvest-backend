@@ -223,6 +223,7 @@ export function serializeMessage(msg: ServerMessage): Uint8Array {
           impactMultiplier: e.impact_multiplier,
           playerTip: e.player_tip,
           generatedAt: new Date(e.generated_at).getTime(),
+          expiresAt: new Date(e.expires_at).getTime(),
         },
       };
       break;
@@ -267,5 +268,6 @@ interface ProtoPayload {
     impactMultiplier: number;
     playerTip: string;
     generatedAt: number;
+    expiresAt: number;
   };
 }

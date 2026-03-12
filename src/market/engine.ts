@@ -158,10 +158,14 @@ async function fetchCommodityData(): Promise<PegData | null> {
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
-/** Rebuild the commodity cache using the last fetched prices with fresh event multipliers. */
+/** Rebuild the commodity cache with fresh event multipliers.
+ *  Falls back to default pegs (1.0) if no RapidAPI data has arrived yet. */
 export function rebuildWithCurrentEvent(): void {
-  if (!lastPegData) return;
-  gameCommodityCache = buildGameCommodities(lastPegData, referencePrices);
+  const pegData = lastPegData ?? {
+    multipliers: Object.fromEntries(ALL_PEGS.map((p) => [p, 1.0])),
+    realPrices: {},
+  };
+  gameCommodityCache = buildGameCommodities(pegData, referencePrices);
 }
 
 export function getGameCommodities(): {

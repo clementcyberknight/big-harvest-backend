@@ -202,14 +202,20 @@ export function createWsServer(): void {
   );
 
   startEventEngine((event) => {
+    rebuildWithCurrentEvent();
     if (event) {
-      rebuildWithCurrentEvent();
       app.publish(
         TOPIC_GLOBAL,
         serializeMessage({ type: "game_event", payload: event }),
         true,
       );
     }
+    const pulse = getMarketPulse();
+    app.publish(
+      TOPIC_MARKET,
+      serializeMessage({ type: "market_pulse", payload: { ...pulse.multipliers, timestamp: pulse.timestamp } }),
+      true,
+    );
   });
 
   startMarketEngine((pulse) => {
