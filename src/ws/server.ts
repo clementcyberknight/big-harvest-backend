@@ -5,7 +5,7 @@
 import { createRequire } from "node:module";
 import type { WebSocket, us_listen_socket } from "uWebSockets.js";
 import { createChallenge, authenticateWithWallet, verifyAccessToken } from "../auth/index.js";
-import { startMarketEngine, getMarketPulse } from "../market/engine.js";
+import { startMarketEngine, getMarketPulse, rebuildWithCurrentEvent } from "../market/engine.js";
 import { startEventEngine, getActiveEvent } from "../market/events.js";
 import { startGameClock, getCurrentGameTime } from "../game/clock.js";
 import { parseMessage, serializeMessage, type ServerMessage } from "./messages.js";
@@ -203,6 +203,7 @@ export function createWsServer(): void {
 
   startEventEngine((event) => {
     if (event) {
+      rebuildWithCurrentEvent();
       app.publish(
         TOPIC_GLOBAL,
         serializeMessage({ type: "game_event", payload: event }),

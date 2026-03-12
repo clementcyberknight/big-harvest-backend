@@ -69,6 +69,7 @@ let gameCommodityCache: GameCommodity[] = [];
 let commodityCacheFetchedAt: Date | null = null;
 let lastUpdate = 0;
 let referencePrices: Record<string, number> = {};
+let lastPegData: PegData | null = null;
 
 function parseRealPrice(value: string | undefined): number | null {
   if (typeof value !== "string") return null;
@@ -157,6 +158,12 @@ async function fetchCommodityData(): Promise<PegData | null> {
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
+/** Rebuild the commodity cache using the last fetched prices with fresh event multipliers. */
+export function rebuildWithCurrentEvent(): void {
+  if (!lastPegData) return;
+  gameCommodityCache = buildGameCommodities(lastPegData, referencePrices);
+}
+
 export function getGameCommodities(): {
   commodities: GameCommodity[];
   fetched_at: string | null;
@@ -184,6 +191,7 @@ export async function updateMarketPrices(): Promise<Record<string, number>> {
     ) {
       referencePrices = { ...data.realPrices };
     }
+    lastPegData = data;
     gameCommodityCache = buildGameCommodities(data, referencePrices);
     commodityCacheFetchedAt = new Date();
     lastUpdate = Date.now();
