@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+// Client -> Server messages
+message Auth {
+  string public_key = 1;
+  string signature = 2;
+  string nonce = 3;
+  int64 timestamp = 4;
+  string session_token = 5;
+  string device_info = 6;
+}
+
+message Heartbeat {
+  int64 local_time = 1;
+  string last_action_id = 2;
+}
+
+message ClientMessage {
+  oneof payload {
+    Auth auth = 1;
+    Heartbeat heartbeat = 2;
+  }
+}
+
+// Server -> Client messages
+message AuthChallenge {
+  string nonce = 1;
+  int64 timestamp = 2;
+  int32 expires_in = 3;
+}
+
+message AuthSuccess {
+  string access_token = 1;
+  string refresh_token = 2;
+  int32 expires_in = 3;
+}
+
+message AuthFailed {
+  string reason = 1;
+}
+
+message MarketPulse {
+  map<string, double> multipliers = 1;
+  int64 timestamp = 2;
+}
+
+message HeartbeatAck {
+  int64 server_time = 1;
+}
+
+message ServerMessage {
+  oneof payload {
+    AuthChallenge auth_challenge = 1;
+    AuthSuccess auth_success = 2;
+    AuthFailed auth_failed = 3;
+    MarketPulse market_pulse = 4;
+    HeartbeatAck heartbeat_ack = 5;
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "name": "big-harvest-backend",
+  "version": "1.0.0",
+  "description": "High-performance Farville backend - WebSocket + Supabase",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.13.1",
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.11.0",
+    "@noble/ed25519": "^3.0.0",
+    "@supabase/supabase-js": "^2.99.1",
+    "bs58": "^6.0.0",
+    "dotenv": "^17.3.1",
+    "jose": "^6.2.1",
+    "protobufjs": "^8.0.0",
+    "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.52.0",
+    "undici": "^7.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.4.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}
