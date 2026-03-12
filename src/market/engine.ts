@@ -64,7 +64,6 @@ export interface GameCommodity {
   sell_price: number;
 }
 
-let apiMultipliers: Record<string, number> = {};
 let gameCommodityCache: GameCommodity[] = [];
 let commodityCacheFetchedAt: Date | null = null;
 let lastUpdate = 0;
@@ -164,7 +163,6 @@ export function computeMultipliers(): Record<string, number> {
 export async function updateMarketPrices(): Promise<Record<string, number>> {
   const data = await fetchCommodityData();
   if (data) {
-    apiMultipliers = data;
     gameCommodityCache = buildGameCommodities(data);
     commodityCacheFetchedAt = new Date();
     lastUpdate = Date.now();
