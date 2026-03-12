@@ -1,6 +1,7 @@
 syntax = "proto3";
 
-// Client -> Server messages
+// ── Client → Server ──────────────────────────────────────────────────────────
+
 message Auth {
   string public_key = 1;
   string signature = 2;
@@ -22,7 +23,8 @@ message ClientMessage {
   }
 }
 
-// Server -> Client messages
+// ── Server → Client ──────────────────────────────────────────────────────────
+
 message AuthChallenge {
   string nonce = 1;
   int64 timestamp = 2;
@@ -39,13 +41,42 @@ message AuthFailed {
   string reason = 1;
 }
 
+message HeartbeatAck {
+  int64 server_time = 1;
+}
+
+// Market price multipliers broadcast every game day (keyed by commodity id).
 message MarketPulse {
   map<string, double> multipliers = 1;
   int64 timestamp = 2;
 }
 
-message HeartbeatAck {
-  int64 server_time = 1;
+// Current game time state. Sent on connect and every game day.
+message GameClock {
+  string season = 1;          // "spring" | "summer" | "autumn" | "winter"
+  int32 season_day = 2;       // 1-based day within the current season
+  int32 year = 3;             // game year (starts at 1)
+  int32 total_days = 4;       // total game days elapsed since server start
+  int64 next_day_at = 5;      // unix ms when the next game day begins
+  int64 next_season_at = 6;   // unix ms when the next season begins
+}
+
+// Broadcast when the season transitions.
+message SeasonChange {
+  string new_season = 1;      // the season that just started
+  int32 year = 2;
+  int64 started_at = 3;       // unix ms when this season began
+}
+
+// AI-generated market event. Broadcast on each season change.
+message GameEvent {
+  string event_title = 1;
+  string description = 2;
+  repeated string affect = 3;   // affected commodity IDs
+  string outcome = 4;           // "crash" | "surge" | "boycott"
+  double impact_multiplier = 5;
+  string player_tip = 6;
+  int64 generated_at = 7;       // unix ms
 }
 
 message ServerMessage {
@@ -55,5 +86,8 @@ message ServerMessage {
     AuthFailed auth_failed = 3;
     MarketPulse market_pulse = 4;
     HeartbeatAck heartbeat_ack = 5;
+    GameClock game_clock = 6;
+    SeasonChange season_change = 7;
+    GameEvent game_event = 8;
   }
 }

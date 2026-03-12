@@ -1,22 +1,17 @@
 /**
- * WebSocket server (uWebSockets.js).
+ * WebSocket + HTTP server.
  */
 
 import { createRequire } from "node:module";
 import type { WebSocket, us_listen_socket } from "uWebSockets.js";
-import {
-  createChallenge,
-  authenticateWithWallet,
-  verifyAccessToken,
-} from "../auth/index.js";
-import { startMarketEngine } from "../market/engine.js";
-import {
-  parseMessage,
-  serializeMessage,
-  type ServerMessage,
-} from "./messages.js";
+import { createChallenge, authenticateWithWallet, verifyAccessToken } from "../auth/index.js";
+import { startMarketEngine, getMarketPulse } from "../market/engine.js";
+import { startEventEngine, getActiveEvent } from "../market/events.js";
+import { startGameClock, getCurrentGameTime } from "../game/clock.js";
+import { parseMessage, serializeMessage, type ServerMessage } from "./messages.js";
 import { registerRefreshRoute } from "../http/refresh.js";
 import { registerCommoditiesRoute } from "../http/commodities.js";
+import { registerEventsRoute } from "../http/events.js";
 import { env } from "../config/env.js";
 
 const require = createRequire(import.meta.url);
@@ -37,8 +32,23 @@ function userTopic(wallet: string): string {
 }
 
 function send(ws: WebSocket<WsUserData>, msg: ServerMessage): void {
-  const bytes = serializeMessage(msg);
-  ws.send(bytes, true);
+  ws.send(serializeMessage(msg), true);
+}
+
+function sendInitialState(ws: WebSocket<WsUserData>): void {
+  const time = getCurrentGameTime();
+  send(ws, { type: "game_clock", payload: time });
+
+  const pulse = getMarketPulse();
+  send(ws, {
+    type: "market_pulse",
+    payload: { ...pulse.multipliers, timestamp: pulse.timestamp },
+  });
+
+  const event = getActiveEvent();
+  if (event) {
+    send(ws, { type: "game_event", payload: event });
+  }
 }
 
 export function createWsServer(): void {
@@ -83,12 +93,14 @@ export function createWsServer(): void {
               refresh_token: "",
               expires_in: 15 * 60,
             });
+            sendInitialState(ws);
             return;
           }
           send(ws, { type: "auth_failed", reason: "Invalid or expired token" });
           return;
         }
 
+        // ── Full wallet sign-in ───────────────────────────────────────────
         if (
           msg.public_key &&
           msg.signature &&
@@ -121,6 +133,7 @@ export function createWsServer(): void {
             refresh_token: result.refreshToken,
             expires_in: result.expiresIn,
           });
+          sendInitialState(ws);
           return;
         }
 
@@ -139,9 +152,7 @@ export function createWsServer(): void {
 
     close: (ws) => {
       const data = ws.getUserData();
-      if (data.wallet) {
-        ws.unsubscribe(userTopic(data.wallet));
-      }
+      if (data.wallet) ws.unsubscribe(userTopic(data.wallet));
       ws.unsubscribe(TOPIC_MARKET);
       ws.unsubscribe(TOPIC_GLOBAL);
     },
@@ -149,21 +160,74 @@ export function createWsServer(): void {
 
   registerRefreshRoute(app);
   registerCommoditiesRoute(app);
+  registerEventsRoute(app);
+
+  startGameClock(
+    // Every game day: broadcast game_clock to all market subscribers
+    (time) => {
+      const bytes = serializeMessage({ type: "game_clock", payload: time });
+      app.publish(TOPIC_MARKET, bytes, true);
+      console.log(
+        `[clock] Day ${time.total_days} | Year ${time.year} | ${time.season} day ${time.season_day}`,
+      );
+    },
+
+    // Every season change: broadcast season_change + push current active event
+    (time) => {
+      console.log(`[clock] Season → ${time.season} (Year ${time.year})`);
+
+      app.publish(
+        TOPIC_GLOBAL,
+        serializeMessage({
+          type: "season_change",
+          payload: {
+            new_season: time.season,
+            year: time.year,
+            started_at: time.real_time,
+          },
+        }),
+        true,
+      );
+
+      // Re-broadcast the currently active event so clients know it applies to new season
+      const event = getActiveEvent();
+      if (event) {
+        app.publish(
+          TOPIC_GLOBAL,
+          serializeMessage({ type: "game_event", payload: event }),
+          true,
+        );
+      }
+    },
+  );
+
+  startEventEngine((event) => {
+    if (event) {
+      app.publish(
+        TOPIC_GLOBAL,
+        serializeMessage({ type: "game_event", payload: event }),
+        true,
+      );
+    }
+  });
 
   startMarketEngine((pulse) => {
-    const msg: ServerMessage = {
+    const bytes = serializeMessage({
       type: "market_pulse",
       payload: { ...pulse.multipliers, timestamp: pulse.timestamp },
-    };
-    const bytes = serializeMessage(msg);
+    });
     app.publish(TOPIC_MARKET, bytes, true);
   });
 
   app.listen(env.port, (listenSocket: us_listen_socket | false) => {
     if (!listenSocket) {
-      console.error("Failed to listen on port", env.port);
+      console.error("[server] Failed to listen on port", env.port);
       process.exit(1);
     }
-    console.log(`WebSocket server listening on port ${env.port}`);
+    const time = getCurrentGameTime();
+    console.log(`[server] Listening on port ${env.port}`);
+    console.log(
+      `[clock]  Year ${time.year} | ${time.season} day ${time.season_day} | next day in ${Math.round((time.next_day_at - Date.now()) / 1000)}s`,
+    );
   });
 }

@@ -5,8 +5,7 @@
 
 import "dotenv/config";
 
-const supabaseSecretKey =
-  process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY ?? "";
 
 export const env = {
   supabaseUrl: process.env.SUPABASE_URL ?? "",
@@ -15,4 +14,5 @@ export const env = {
   port: Number(process.env.PORT) || 3001,
   nodeEnv: process.env.NODE_ENV ?? "development",
   rapidApiKey: process.env.RAPIDAPI_KEY ?? "",
+  googleAiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? "",
 } as const;

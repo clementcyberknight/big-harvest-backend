@@ -1,114 +1,125 @@
 /**
- * Market price engine - fetches commodity data from RapidAPI, computes game crop prices.
- * 18 farming game crops pegged to real commodities. No random fallback; cache persists on API failure.
+ * Market price engine.
  */
 
 import { request } from "undici";
 import { env } from "../config/env.js";
+import { GAME_CROPS } from "./crops.js";
+import type { GameCropDef, RecipeIngredient } from "./crops.js";
+import { getEventMultiplierFor } from "./events.js";
+
+export type {
+  CommodityCategory,
+  RecipeIngredient,
+  GameCropDef,
+} from "./crops.js";
+export { GAME_CROPS } from "./crops.js";
 
 const MARKET_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const RAPIDAPI_COMMODITIES_URL =
   "https://investing-real-time.p.rapidapi.com/markets/commodities";
 
-// Peg keys used to derive multipliers from API
-const PEG_WHEAT = "wheat";
-const PEG_CORN = "corn";
-const PEG_SOYBEANS = "soybeans";
-const PEG_SUGARCANE = "sugarcane";
-const PEG_COTTON = "cotton";
-const PEG_COFFEE = "coffee";
-
 const API_PEG: Record<string, string> = {
-  "US Wheat": PEG_WHEAT,
-  "US Corn": PEG_CORN,
-  "US Soybeans": PEG_SOYBEANS,
-  "US Sugar #11": PEG_SUGARCANE,
-  "US Cotton #2": PEG_COTTON,
-  "US Coffee C": PEG_COFFEE,
+  "US Wheat": "wheat",
+  "US Corn": "corn",
+  "US Soybeans": "soybeans",
+  "US Sugar #11": "sugarcane",
+  "US Cotton #2": "cotton",
+  "US Coffee C": "coffee",
 };
 
-export interface GameCropDef {
-  id: string;
-  name: string;
-  tier: 1 | 2 | 3 | "special";
-  base_price: number;
-  peg: string;
-}
-
-export const GAME_CROPS: GameCropDef[] = [
-  { id: "wheat", name: "Wheat", tier: 1, base_price: 15, peg: PEG_WHEAT },
-  { id: "carrot", name: "Carrot", tier: 1, base_price: 22, peg: PEG_WHEAT },
-  { id: "corn", name: "Corn", tier: 1, base_price: 18, peg: PEG_CORN },
-  { id: "lettuce", name: "Lettuce", tier: 1, base_price: 20, peg: PEG_WHEAT },
-  { id: "tomato", name: "Tomato", tier: 2, base_price: 55, peg: PEG_CORN },
-  { id: "sugarcane", name: "Sugarcane", tier: 2, base_price: 70, peg: PEG_SUGARCANE },
-  { id: "potato", name: "Potato", tier: 2, base_price: 75, peg: PEG_CORN },
-  { id: "cotton", name: "Cotton", tier: 2, base_price: 90, peg: PEG_COTTON },
-  { id: "sunflower", name: "Sunflower", tier: 2, base_price: 95, peg: PEG_SOYBEANS },
-  { id: "pumpkin", name: "Pumpkin", tier: 3, base_price: 180, peg: PEG_CORN },
-  { id: "watermelon", name: "Watermelon", tier: 3, base_price: 350, peg: PEG_SUGARCANE },
-  { id: "strawberries", name: "Strawberries", tier: 3, base_price: 200, peg: PEG_SUGARCANE },
-  { id: "blueberries", name: "Blueberries", tier: 3, base_price: 220, peg: PEG_SUGARCANE },
-  { id: "coffee", name: "Coffee Beans", tier: 3, base_price: 280, peg: PEG_COFFEE },
-  { id: "indigo", name: "Indigo Flower", tier: "special", base_price: 150, peg: PEG_COTTON },
-  { id: "marigold", name: "Marigold", tier: "special", base_price: 130, peg: PEG_COTTON },
-  { id: "madder", name: "Madder Root", tier: "special", base_price: 160, peg: PEG_COTTON },
-];
+const ALL_PEGS = [
+  "wheat",
+  "corn",
+  "soybeans",
+  "sugarcane",
+  "cotton",
+  "coffee",
+] as const;
 
 export interface GameCommodity {
   id: string;
   name: string;
   tier: 1 | 2 | 3 | "special";
+  category: GameCropDef["category"];
   base_price: number;
   multiplier: number;
+  event_multiplier: number;
   sell_price: number;
+  recipe?: RecipeIngredient[];
 }
 
-let gameCommodityCache: GameCommodity[] = [];
-let commodityCacheFetchedAt: Date | null = null;
-let lastUpdate = 0;
+interface PegData {
+  multipliers: Record<string, number>;
+  realPrices: Record<string, number>;
+}
 
 interface CommodityPair {
   pair_name?: string;
+  last?: string;
   change_percent_val?: string;
 }
 
 interface RapidApiResponse {
   status_code?: number;
-  data?: {
-    pairs_data?: CommodityPair[];
-  };
+  data?: { pairs_data?: CommodityPair[] };
 }
 
-/**
- * Compute multiplier from % change. Base 1.0 + (change/100), clamped to 0.5-2.0.
- */
+let gameCommodityCache: GameCommodity[] = [];
+let commodityCacheFetchedAt: Date | null = null;
+let lastUpdate = 0;
+let referencePrices: Record<string, number> = {};
+
+function parseRealPrice(value: string | undefined): number | null {
+  if (typeof value !== "string") return null;
+  const num = parseFloat(value.replace(/,/g, ""));
+  return Number.isFinite(num) && num > 0 ? num : null;
+}
+
 function changeToMultiplier(changePercent: string | undefined): number {
   const change = parseFloat(changePercent ?? "0");
   if (!Number.isFinite(change)) return 1.0;
-  const mult = 1 + change / 100;
-  return Math.max(0.5, Math.min(2, mult));
+  return Math.max(0.5, Math.min(2, 1 + change / 100));
 }
 
-function buildGameCommodities(multipliers: Record<string, number>): GameCommodity[] {
+function buildGameCommodities(
+  pegData: PegData,
+  refPrices: Record<string, number>,
+): GameCommodity[] {
+  const { multipliers, realPrices } = pegData;
+
   return GAME_CROPS.map((crop) => {
     const mult = multipliers[crop.peg] ?? 1.0;
-    const sellPrice = Math.round(crop.base_price * mult * 100) / 100;
+    const currentReal = realPrices[crop.peg];
+    const refReal = refPrices[crop.peg];
+    const priceScale =
+      currentReal != null && refReal != null && refReal > 0
+        ? Math.max(0.5, Math.min(2, currentReal / refReal))
+        : 1.0;
+
+    const effectiveBase = crop.base_price * priceScale;
+    const eventMult = getEventMultiplierFor(crop.id);
+
+    const sellPrice = Math.round(effectiveBase * mult * eventMult * 100) / 100;
+
     return {
       id: crop.id,
       name: crop.name,
       tier: crop.tier,
-      base_price: crop.base_price,
+      category: crop.category,
+      base_price: Math.round(effectiveBase * 100) / 100,
       multiplier: mult,
+      event_multiplier: eventMult,
       sell_price: sellPrice,
+      recipe: crop.recipe,
     };
   });
 }
 
-async function fetchCommodityData(): Promise<Record<string, number> | null> {
-  if (!env.rapidApiKey) {
-    return null;
-  }
+// ── RapidAPI fetch ───────────────────────────────────────────────────────────
+
+async function fetchCommodityData(): Promise<PegData | null> {
+  if (!env.rapidApiKey) return null;
 
   try {
     const { statusCode, body } = await request(RAPIDAPI_COMMODITIES_URL, {
@@ -126,21 +137,25 @@ async function fetchCommodityData(): Promise<Record<string, number> | null> {
     const pairs = json?.data?.pairs_data;
     if (!Array.isArray(pairs)) return null;
 
-    const result: Record<string, number> = {};
+    const multipliers: Record<string, number> = {};
+    const realPrices: Record<string, number> = {};
 
     for (const pair of pairs) {
-      const pairName = pair.pair_name ?? "";
-      const pegKey = API_PEG[pairName];
+      const pegKey = API_PEG[pair.pair_name ?? ""];
       if (pegKey) {
-        result[pegKey] = changeToMultiplier(pair.change_percent_val);
+        multipliers[pegKey] = changeToMultiplier(pair.change_percent_val);
+        const price = parseRealPrice(pair.last);
+        if (price != null) realPrices[pegKey] = price;
       }
     }
 
-    return result;
+    return { multipliers, realPrices };
   } catch {
     return null;
   }
 }
+
+// ── Public API ───────────────────────────────────────────────────────────────
 
 export function getGameCommodities(): {
   commodities: GameCommodity[];
@@ -163,11 +178,17 @@ export function computeMultipliers(): Record<string, number> {
 export async function updateMarketPrices(): Promise<Record<string, number>> {
   const data = await fetchCommodityData();
   if (data) {
-    gameCommodityCache = buildGameCommodities(data);
+    if (
+      Object.keys(referencePrices).length === 0 &&
+      Object.keys(data.realPrices).length > 0
+    ) {
+      referencePrices = { ...data.realPrices };
+    }
+    gameCommodityCache = buildGameCommodities(data, referencePrices);
     commodityCacheFetchedAt = new Date();
     lastUpdate = Date.now();
   }
-  // On API failure: do nothing, keep existing cache
+  // On API failure: keep existing cache unchanged
   return computeMultipliers();
 }
 
@@ -187,13 +208,13 @@ export function startMarketEngine(
     timestamp: number;
   }) => void,
 ): NodeJS.Timeout {
-  // Seed with defaults (multiplier 1.0) so frontend always has 18 crops
-  const defaultMultipliers: Record<string, number> = {};
-  for (const peg of [PEG_WHEAT, PEG_CORN, PEG_SOYBEANS, PEG_SUGARCANE, PEG_COTTON, PEG_COFFEE]) {
-    defaultMultipliers[peg] = 1.0;
-  }
   if (gameCommodityCache.length === 0) {
-    gameCommodityCache = buildGameCommodities(defaultMultipliers);
+    const defaultPegs: Record<string, number> = {};
+    for (const peg of ALL_PEGS) defaultPegs[peg] = 1.0;
+    gameCommodityCache = buildGameCommodities(
+      { multipliers: defaultPegs, realPrices: {} },
+      {},
+    );
   }
 
   const tick = async () => {
@@ -201,6 +222,6 @@ export function startMarketEngine(
     onUpdate(pulse);
   };
 
-  void tick(); // initial
+  void tick();
   return setInterval(tick, MARKET_UPDATE_INTERVAL_MS);
 }

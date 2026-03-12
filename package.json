@@ -15,15 +15,18 @@
   "license": "ISC",
   "packageManager": "pnpm@10.13.1",
   "dependencies": {
+    "@ai-sdk/google": "^3.0.43",
     "@bufbuild/protobuf": "^2.11.0",
     "@noble/ed25519": "^3.0.0",
     "@supabase/supabase-js": "^2.99.1",
+    "ai": "^6.0.116",
     "bs58": "^6.0.0",
     "dotenv": "^17.3.1",
     "jose": "^6.2.1",
     "protobufjs": "^8.0.0",
     "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.52.0",
-    "undici": "^7.23.0"
+    "undici": "^7.23.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^25.4.0",

@@ -1,12 +1,14 @@
 /**
- * WebSocket message handling - Protobuf streaming.
- * Uses size-delimited format: varint length + message bytes.
+ * WebSocket message handling.
  */
 
 import type protobuf from "protobufjs";
 import { getClientType, getServerType } from "./proto.js";
+import type { GameTime } from "../game/clock.js";
+import type { MarketEvent } from "../market/events.js";
 
-// Re-export parsed types for server logic
+// ── Client message types ──────────────────────────────────────────────────────
+
 export type ParsedClientMessage =
   | {
       type: "auth";
@@ -21,6 +23,34 @@ export type ParsedClientMessage =
       type: "heartbeat";
       payload?: { local_time?: number; last_action_id?: string };
     };
+
+// ── Server message types ─────────────────────────────────────────────────────
+
+export type ServerMessage =
+  | {
+      type: "auth_challenge";
+      nonce: string;
+      timestamp: number;
+      expires_in: number;
+    }
+  | {
+      type: "auth_success";
+      access_token: string;
+      refresh_token: string;
+      expires_in: number;
+    }
+  | { type: "auth_failed"; reason: string }
+  | { type: "heartbeat_ack"; payload?: { server_time: number } }
+  | {
+      type: "market_pulse";
+      payload: Record<string, number> & { timestamp: number };
+    }
+  | { type: "game_clock"; payload: GameTime }
+  | {
+      type: "season_change";
+      payload: { new_season: string; year: number; started_at: number };
+    }
+  | { type: "game_event"; payload: MarketEvent };
 
 function encodeVarint(value: number): Uint8Array {
   const bytes: number[] = [];
@@ -37,8 +67,7 @@ function encodeVarint(value: number): Uint8Array {
 function decodeVarint(data: Uint8Array): { value: number; bytesRead: number } {
   let value = 0;
   let shift = 0;
-  let i = 0;
-  for (; i < data.length; i++) {
+  for (let i = 0; i < data.length; i++) {
     const b = data[i]!;
     value |= (b & 0x7f) << shift;
     if ((b & 0x80) === 0) return { value, bytesRead: i + 1 };
@@ -48,9 +77,11 @@ function decodeVarint(data: Uint8Array): { value: number; bytesRead: number } {
   throw new Error("Incomplete varint");
 }
 
+// ── Parse (Client → Server) ──────────────────────────────────────────────────
+
 /**
- * Parse size-delimited protobuf from ArrayBuffer.
- * Returns null on parse error or incomplete data.
+ * Parse a size-delimited protobuf ClientMessage from an ArrayBuffer.
+ * Returns null on any parse/decode error.
  */
 export function parseMessage(data: ArrayBuffer): ParsedClientMessage | null {
   try {
@@ -62,13 +93,22 @@ export function parseMessage(data: ArrayBuffer): ParsedClientMessage | null {
 
     const msgBytes = bytes.subarray(bytesRead, bytesRead + size);
     const type = getClientType();
-    const msg = type.decode(msgBytes) as protobuf.Message & { payload?: { auth?: object; heartbeat?: object } };
+    const msg = type.decode(msgBytes) as protobuf.Message & {
+      payload?: { auth?: object; heartbeat?: object };
+    };
 
     const payload = msg.payload;
     if (!payload) return null;
 
     if (payload.auth) {
-      const a = payload.auth as { publicKey?: string; signature?: string; nonce?: string; timestamp?: number; sessionToken?: string; deviceInfo?: string };
+      const a = payload.auth as {
+        publicKey?: string;
+        signature?: string;
+        nonce?: string;
+        timestamp?: number;
+        sessionToken?: string;
+        deviceInfo?: string;
+      };
       return {
         type: "auth",
         public_key: a.publicKey,
@@ -81,7 +121,10 @@ export function parseMessage(data: ArrayBuffer): ParsedClientMessage | null {
     }
 
     if (payload.heartbeat) {
-      const h = payload.heartbeat as { localTime?: number; lastActionId?: string };
+      const h = payload.heartbeat as {
+        localTime?: number;
+        lastActionId?: string;
+      };
       return {
         type: "heartbeat",
         payload: { local_time: h.localTime, last_action_id: h.lastActionId },
@@ -94,38 +137,96 @@ export function parseMessage(data: ArrayBuffer): ParsedClientMessage | null {
   }
 }
 
-export type ServerMessage =
-  | { type: "auth_challenge"; nonce: string; timestamp: number; expires_in: number }
-  | { type: "auth_success"; access_token: string; refresh_token: string; expires_in: number }
-  | { type: "auth_failed"; reason: string }
-  | { type: "market_pulse"; payload: Record<string, number> & { timestamp: number } }
-  | { type: "heartbeat_ack"; payload?: { server_time: number } };
+// ── Serialize (Server → Client) ──────────────────────────────────────────────
 
 /**
- * Serialize server message to size-delimited protobuf binary.
+ * Serialize a ServerMessage to size-delimited protobuf binary.
+ * All messages use the same ServerMessage wrapper with a oneof payload.
  */
 export function serializeMessage(msg: ServerMessage): Uint8Array {
   const type = getServerType();
-  let payload: ServerMessagePayload["payload"] = {};
+  let payload: ProtoPayload = {};
 
   switch (msg.type) {
     case "auth_challenge":
-      payload = { authChallenge: { nonce: msg.nonce, timestamp: msg.timestamp, expiresIn: msg.expires_in } };
+      payload = {
+        authChallenge: {
+          nonce: msg.nonce,
+          timestamp: msg.timestamp,
+          expiresIn: msg.expires_in,
+        },
+      };
       break;
+
     case "auth_success":
-      payload = { authSuccess: { accessToken: msg.access_token, refreshToken: msg.refresh_token, expiresIn: msg.expires_in } };
+      payload = {
+        authSuccess: {
+          accessToken: msg.access_token,
+          refreshToken: msg.refresh_token,
+          expiresIn: msg.expires_in,
+        },
+      };
       break;
+
     case "auth_failed":
       payload = { authFailed: { reason: msg.reason } };
       break;
-    case "market_pulse": {
-      const { timestamp, ...multipliers } = msg.payload;
-      payload = { marketPulse: { multipliers: multipliers as Record<string, number>, timestamp } };
-      break;
-    }
+
     case "heartbeat_ack":
       payload = { heartbeatAck: { serverTime: msg.payload?.server_time ?? 0 } };
       break;
+
+    case "market_pulse": {
+      const { timestamp, ...multipliers } = msg.payload;
+      payload = {
+        marketPulse: {
+          multipliers: multipliers as Record<string, number>,
+          timestamp,
+        },
+      };
+      break;
+    }
+
+    case "game_clock": {
+      const t = msg.payload;
+      payload = {
+        gameClock: {
+          season: t.season,
+          seasonDay: t.season_day,
+          year: t.year,
+          totalDays: t.total_days,
+          nextDayAt: t.next_day_at,
+          nextSeasonAt: t.next_season_at,
+        },
+      };
+      break;
+    }
+
+    case "season_change":
+      payload = {
+        seasonChange: {
+          newSeason: msg.payload.new_season,
+          year: msg.payload.year,
+          startedAt: msg.payload.started_at,
+        },
+      };
+      break;
+
+    case "game_event": {
+      const e = msg.payload;
+      payload = {
+        gameEvent: {
+          eventTitle: e.event,
+          description: e.description,
+          affect: e.affect,
+          outcome: e.outcome,
+          impactMultiplier: e.impact_multiplier,
+          playerTip: e.player_tip,
+          generatedAt: new Date(e.generated_at).getTime(),
+        },
+      };
+      break;
+    }
   }
 
   const obj = type.create({ payload });
@@ -137,13 +238,34 @@ export function serializeMessage(msg: ServerMessage): Uint8Array {
   return out;
 }
 
-// Internal - protobufjs uses camelCase for JSON
-interface ServerMessagePayload {
-  payload?: {
-    authChallenge?: { nonce: string; timestamp: number; expiresIn: number };
-    authSuccess?: { accessToken: string; refreshToken: string; expiresIn: number };
-    authFailed?: { reason: string };
-    marketPulse?: { multipliers: Record<string, number>; timestamp: number };
-    heartbeatAck?: { serverTime: number };
+// ── Internal proto shape (protobufjs uses camelCase field names) ─────────────
+
+interface ProtoPayload {
+  authChallenge?: { nonce: string; timestamp: number; expiresIn: number };
+  authSuccess?: {
+    accessToken: string;
+    refreshToken: string;
+    expiresIn: number;
+  };
+  authFailed?: { reason: string };
+  heartbeatAck?: { serverTime: number };
+  marketPulse?: { multipliers: Record<string, number>; timestamp: number };
+  gameClock?: {
+    season: string;
+    seasonDay: number;
+    year: number;
+    totalDays: number;
+    nextDayAt: number;
+    nextSeasonAt: number;
+  };
+  seasonChange?: { newSeason: string; year: number; startedAt: number };
+  gameEvent?: {
+    eventTitle: string;
+    description: string;
+    affect: string[];
+    outcome: string;
+    impactMultiplier: number;
+    playerTip: string;
+    generatedAt: number;
   };
 }
