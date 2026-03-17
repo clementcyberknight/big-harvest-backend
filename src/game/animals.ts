@@ -15,6 +15,14 @@ const DROPS: Record<string, { normal: string[], rare?: { id: string, chance: num
   sheep: { normal: ['raw_wool'] }
 };
 
+type HealthStatus = 'happy' | 'sad' | 'sick';
+
+function getHealthStatus(missedCycles: number): HealthStatus {
+  if (missedCycles >= 20) return 'sick';
+  if (missedCycles >= 5) return 'sad';
+  return 'happy';
+}
+
 export class AnimalEngine {
 
   static async buyAnimal(profileId: string, animalType: string) {
@@ -89,14 +97,37 @@ export class AnimalEngine {
       throw new Error('Not enough animal_feed in inventory');
     }
     
-    await supabase.from('animals').update({ is_fed: true }).eq('id', animalId);
+    // Feeding resets missed_cycles and sets is_fed
+    await supabase.from('animals').update({ is_fed: true, missed_cycles: 0, health_status: 'happy' }).eq('id', animalId);
+    return { success: true };
+  }
+
+  static async cureAnimal(profileId: string, animalId: string) {
+    const { data: animal } = await supabase
+      .from('animals')
+      .select('health_status')
+      .eq('id', animalId)
+      .eq('profile_id', profileId)
+      .single();
+      
+    if (!animal) throw new Error('Animal not found');
+    if (animal.health_status !== 'sick') throw new Error('Animal is not sick');
+    
+    const hasMedicine = await this.decrementInventory(profileId, 'medicine', 1);
+    if (!hasMedicine) throw new Error('Not enough medicine in inventory');
+    
+    await supabase.from('animals').update({
+      health_status: 'happy',
+      missed_cycles: 0
+    }).eq('id', animalId);
+    
     return { success: true };
   }
 
   static async collect(profileId: string, animalId: string) {
     const { data: animal } = await supabase
       .from('animals')
-      .select('animal_type, last_collected, is_fed')
+      .select('animal_type, last_collected, is_fed, missed_cycles, health_status')
       .eq('id', animalId)
       .eq('profile_id', profileId)
       .single();
@@ -108,6 +139,29 @@ export class AnimalEngine {
     
     if (now < lastCollected + ANIMAL_CYCLE_MS) {
       throw new Error('Animal not ready for collection');
+    }
+
+    // Calculate missed cycles (how many cycles passed since last collection minus 1)
+    const cyclesPassed = Math.floor((now - lastCollected) / ANIMAL_CYCLE_MS);
+    const newMissed = Math.max(0, (animal.missed_cycles || 0) + cyclesPassed - 1);
+    const status = getHealthStatus(newMissed);
+
+    // Update health status & missed cycles
+    await supabase.from('animals').update({
+      last_collected: now,
+      is_fed: false,
+      missed_cycles: newMissed,
+      health_status: status
+    }).eq('id', animalId);
+
+    // Sick animals — cannot produce at all, need medicine
+    if (status === 'sick') {
+      return { items: [], rare: false, xp: 0, health_status: 'sick' as const };
+    }
+
+    // Sad animals — produce nothing but can still recover
+    if (status === 'sad') {
+      return { items: [], rare: false, xp: 0, health_status: 'sad' as const };
     }
 
     const dropConfig = DROPS[animal.animal_type];
@@ -131,17 +185,11 @@ export class AnimalEngine {
       }
     }
 
-    // Un-feed the animal after collection
-    await supabase.from('animals').update({
-      last_collected: now,
-      is_fed: false
-    }).eq('id', animalId);
-
     for (const item of itemsToAdd) {
       await this.incrementInventory(profileId, item.id, item.qty);
     }
 
-    return { items: itemsToAdd, rare: rareDropped, xp: 15 * multiplier };
+    return { items: itemsToAdd, rare: rareDropped, xp: 15 * multiplier, health_status: 'happy' as const };
   }
 
   static async mateAnimals(profileId: string, sireId: string, damId: string) {

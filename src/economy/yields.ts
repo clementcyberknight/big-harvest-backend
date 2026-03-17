@@ -58,3 +58,18 @@ export function calculateGrowthTimeMs(crop: GameCropDef, plotTier: PlotTier): nu
 
   return baseMs;
 }
+
+/**
+ * Wither window = 2× growth time. If a crop sits unharvested beyond this, it dies.
+ */
+export const WITHER_MULTIPLIER = 2;
+
+export function getWitherWindowMs(crop: GameCropDef, plotTier: PlotTier): number {
+  return calculateGrowthTimeMs(crop, plotTier) * WITHER_MULTIPLIER;
+}
+
+export function isWithered(plantedAtMs: number, crop: GameCropDef, plotTier: PlotTier): boolean {
+  const growthMs = calculateGrowthTimeMs(crop, plotTier);
+  const witherMs = getWitherWindowMs(crop, plotTier);
+  return Date.now() > plantedAtMs + growthMs + witherMs;
+}

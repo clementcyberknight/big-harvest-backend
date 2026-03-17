@@ -1,8 +1,10 @@
 import { supabase } from '../db/supabase.js';
 import { executeTransfer } from '../economy/ledger.js';
 import { PricingEngine } from '../economy/pricing.js';
-import { calculateYield, calculateGrowthTimeMs, PlotTier } from '../economy/yields.js';
+import { TaxEngine } from '../economy/tax.js';
+import { calculateYield, calculateGrowthTimeMs, isWithered, PlotTier } from '../economy/yields.js';
 import { GAME_CROPS } from '../market/crops.js';
+import { TrackerEngine } from '../events/tracker.js';
 
 export class FarmingEngine {
 
@@ -56,6 +58,8 @@ export class FarmingEngine {
       throw new Error('Database error creating plot');
     }
 
+    TrackerEngine.logActivity(profileId, 'bought_plot', { tier, cost }).catch(console.error);
+
     return plot;
   }
 
@@ -78,6 +82,8 @@ export class FarmingEngine {
     if (!success) throw new Error('Insufficient funds');
 
     await PricingEngine.recordPurchase(cropId, qty);
+    await TrackerEngine.trackCommodity(cropId, 'buy', qty).catch(console.error);
+    TrackerEngine.logActivity(profileId, 'bought_seed', { cropId, qty, totalCost }).catch(console.error);
 
     await this.incrementInventory(profileId, `${cropId}_seed`, qty);
     return { success: true, cost: totalCost };
@@ -118,6 +124,8 @@ export class FarmingEngine {
       planted_at: Date.now()
     }).eq('id', plotId);
 
+    TrackerEngine.logActivity(profileId, 'planted_crop', { cropId }).catch(console.error);
+
     return { success: true };
   }
 
@@ -138,9 +146,22 @@ export class FarmingEngine {
 
     const growthTimeMs = calculateGrowthTimeMs(crop, plot.plot_tier as PlotTier);
     const now = Date.now();
+    const plantedAt = Number(plot.planted_at);
     
-    if (now < Number(plot.planted_at) + growthTimeMs) {
+    if (now < plantedAt + growthTimeMs) {
       throw new Error('Crop not ready yet');
+    }
+
+    // Check if crop has withered (past the harvest window)
+    if (isWithered(plantedAt, crop, plot.plot_tier as PlotTier)) {
+      // Crop is dead — clear the plot and return nothing
+      await supabase.from('plots').update({
+        crop_id: null,
+        planted_at: null,
+        boost_applied: false
+      }).eq('id', plotId);
+
+      return { items: [], xp: 0, withered: true };
     }
 
     const yieldAmount = calculateYield(plot.crop_id, plot.plot_tier as PlotTier, plot.boost_applied);
@@ -153,7 +174,9 @@ export class FarmingEngine {
 
     await this.incrementInventory(profileId, plot.crop_id, yieldAmount);
 
-    return { items: [{ id: plot.crop_id, qty: yieldAmount }], xp: 10 };
+    TrackerEngine.logActivity(profileId, 'harvested_crop', { cropId: plot.crop_id, yieldAmount }).catch(console.error);
+
+    return { items: [{ id: plot.crop_id, qty: yieldAmount }], xp: 10, withered: false };
   }
 
   static async sell(profileId: string, itemId: string, qty: number) {
@@ -162,9 +185,6 @@ export class FarmingEngine {
     const state = await PricingEngine.getState(itemId);
     if (!state) throw new Error('Cannot sell this item');
 
-    // Rare produce and crafted items are inventory items, but Plots and Animals are distinct tables.
-    // In our spec, only produce/seeds/inventory are sold via this `sell` method. 
-    // Plot and Animal liquidations would need a dedicated endpoint, but in case they use this...
     if (['starter_plot', 'fertile_plot', 'premium_plot'].includes(itemId)) {
       throw new Error('Please use the property manager to sell land');
     }
@@ -175,28 +195,59 @@ export class FarmingEngine {
     const hasItem = await this.decrementInventory(profileId, itemId, qty);
     if (!hasItem) throw new Error('Not enough items in inventory');
 
-    const totalEarned = state.current_sell_price * qty;
+    const grossEarned = state.current_sell_price * qty;
 
+    // Apply progressive tax
+    const { netAmount, taxAmount, effectiveRate } = await TaxEngine.applySaleTax(profileId, grossEarned);
+
+    // Check for protest penalty (garnished wages against a fixed fine)
+    const protestPenalty = await TaxEngine.getProtestPenalty(profileId);
+    let protestTax = 0;
+    if (protestPenalty && protestPenalty.remainingFine > 0) {
+      protestTax = Math.floor(netAmount * protestPenalty.garnishRate);
+      if (protestTax > protestPenalty.remainingFine) {
+        protestTax = protestPenalty.remainingFine;
+      }
+      
+      // Pay down fine
+      await TaxEngine.payDownProtestFine(profileId, protestTax);
+    }
+
+    const finalNet = netAmount - protestTax;
+    const totalTax = taxAmount + protestTax;
+
+    // Player receives net amount
     const success = await executeTransfer({
       fromType: 'treasury', fromId: 'treasury-singleton',
       toType: 'player', toId: profileId,
-      amount: totalEarned, reason: 'produce_sale',
-      metadata: { itemId, qty }
+      amount: finalNet, reason: 'produce_sale',
+      metadata: { itemId, qty, grossEarned, taxAmount: totalTax, effectiveRate }
     });
 
     if (!success) {
-      // Refund item back
       await this.incrementInventory(profileId, itemId, qty);
       throw new Error('Treasury rejected sale (insufficient funds)');
     }
 
     await PricingEngine.recordSale(itemId, qty);
+    await TrackerEngine.trackCommodity(itemId, 'sell', qty).catch(console.error);
+    TrackerEngine.logActivity(profileId, 'sold_item', { itemId, qty, finalNet, totalTax }).catch(console.error);
 
-    return { earned: totalEarned };
+    return {
+      earned: finalNet,
+      grossEarned,
+      taxAmount: totalTax,
+      effectiveRate,
+      protestTax: protestTax > 0 ? protestTax : undefined
+    };
+  }
+
+  static async donateTreasury(profileId: string, amount: number) {
+    return TaxEngine.donateTreasury(profileId, amount);
   }
 
   // --- Helpers for inventory ---
-  private static async incrementInventory(profileId: string, itemId: string, qty: number) {
+  static async incrementInventory(profileId: string, itemId: string, qty: number) {
     const { data } = await supabase.from('inventory')
       .select('id, quantity').eq('profile_id', profileId).eq('item_id', itemId).maybeSingle();
     

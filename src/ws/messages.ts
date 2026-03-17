@@ -38,7 +38,21 @@ export type ParsedClientMessage =
   | { type: "start_incubation"; incubator_id: string; egg_item_id: string }
   | { type: "finish_incubation"; incubator_id: string }
   | { type: "request_loan"; amount: number }
-  | { type: "repay_loan"; loan_id: string; amount: number };
+  | { type: "repay_loan"; loan_id: string; amount: number }
+  | { type: "cure_animal"; animal_id: string }
+  | { type: "donate_treasury"; amount: number }
+  | { type: "buy_black_market"; item_id: string; qty: number }
+  | { type: "create_syndicate"; name: string }
+  | { type: "join_syndicate"; syndicate_id: string }
+  | { type: "leave_syndicate" }
+  | { type: "kick_member"; profile_id: string }
+  | { type: "send_chat"; message: string }
+  | { type: "transfer_funds"; target_wallet: string; amount: number }
+  | { type: "transfer_items"; target_wallet: string; item_id: string; qty: number }
+  | { type: "file_protest"; target_wallet: string }
+  | { type: "get_protest_status"; target_wallet: string }
+  | { type: "contribute_bounty"; item_id: string; qty: number }
+  | { type: "get_player_activity"; target_wallet: string };
 
 // ── Server message types ─────────────────────────────────────────────────────
 
@@ -76,7 +90,55 @@ export type ServerMessage =
   | { type: "craft_complete"; item_id: string; quantity: number }
   | { type: "price_update"; prices: any[] }
   | { type: "loan_default"; seized_assets: Array<{ type: string; id: string; value: number }>; remaining_debt: number }
-  | { type: "animal_update"; id: string; animal_type: string; locked_for_loan: boolean; last_mated_at: number; gestation_ready_at: number; is_fed: boolean }
+  | {
+      type: "animal_update";
+      id: string;
+      animal_type: string;
+      locked_for_loan: boolean;
+      last_mated_at: number;
+      gestation_ready_at: number;
+      is_fed: boolean;
+    }
+  | {
+      type: "goodwill_update";
+      points: number;
+      effective_tax_rate: number;
+    }
+  | {
+      type: "trader_arrived";
+      items: Array<{ id: string; price: number; qty_available: number }>;
+      expires_at: number;
+    }
+  | {
+      type: "chat_message";
+      sender_id: string;
+      content: string;
+      timestamp: number;
+    }
+  | {
+      type: "protest_status";
+      target_wallet: string;
+      status: string;
+      signer_count: number;
+      required: number;
+    }
+  | {
+      type: "player_activity";
+      target_wallet: string;
+      activities: { action: string; details: string; timestamp: number }[];
+    }
+  | {
+      type: "commodity_alert";
+      commodity_id: string;
+      alert: string;
+      volume: number;
+      price_impact: number;
+    }
+  | {
+      type: "system_alert";
+      message: string;
+      level: string;
+    }
   | { type: "incubator_update"; id: string; egg_type: string; ready_at: number };
 
 function encodeVarint(value: number): Uint8Array {
@@ -140,6 +202,20 @@ export function parseMessage(data: ArrayBuffer): ParsedClientMessage | null {
         finishIncubation?: { incubatorId: string };
         requestLoan?: { amount: number };
         repayLoan?: { loanId: string; amount: number };
+        cureAnimal?: { animalId: string };
+        donateTreasury?: { amount: number };
+        buyBlackMarket?: { itemId: string; qty: number };
+        createSyndicate?: { name: string };
+        joinSyndicate?: { syndicateId: string };
+        leaveSyndicate?: object;
+        kickMember?: { profileId: string };
+        sendChat?: { message: string };
+        transferFunds?: { targetWallet: string; amount: number };
+        transferItems?: { targetWallet: string; itemId: string; qty: number };
+        fileProtest?: { targetWallet: string };
+        getProtestStatus?: { targetWallet: string };
+        contributeBounty?: { itemId: string; qty: number };
+        getPlayerActivity?: { targetWallet: string };
       };
     };
 
@@ -183,6 +259,20 @@ export function parseMessage(data: ArrayBuffer): ParsedClientMessage | null {
     if (payload.finishIncubation) return { type: "finish_incubation", incubator_id: payload.finishIncubation.incubatorId };
     if (payload.requestLoan) return { type: "request_loan", amount: payload.requestLoan.amount };
     if (payload.repayLoan) return { type: "repay_loan", loan_id: payload.repayLoan.loanId, amount: payload.repayLoan.amount };
+    if (payload.cureAnimal) return { type: "cure_animal", animal_id: payload.cureAnimal.animalId };
+    if (payload.donateTreasury) return { type: "donate_treasury", amount: payload.donateTreasury.amount };
+    if (payload.buyBlackMarket) return { type: "buy_black_market", item_id: payload.buyBlackMarket.itemId, qty: payload.buyBlackMarket.qty };
+    if (payload.createSyndicate) return { type: "create_syndicate", name: payload.createSyndicate.name };
+    if (payload.joinSyndicate) return { type: "join_syndicate", syndicate_id: payload.joinSyndicate.syndicateId };
+    if (payload.leaveSyndicate) return { type: "leave_syndicate" };
+    if (payload.kickMember) return { type: "kick_member", profile_id: payload.kickMember.profileId };
+    if (payload.sendChat) return { type: "send_chat", message: payload.sendChat.message };
+    if (payload.transferFunds) return { type: "transfer_funds", target_wallet: payload.transferFunds.targetWallet, amount: payload.transferFunds.amount };
+    if (payload.transferItems) return { type: "transfer_items", target_wallet: payload.transferItems.targetWallet, item_id: payload.transferItems.itemId, qty: payload.transferItems.qty };
+    if (payload.fileProtest) return { type: "file_protest", target_wallet: payload.fileProtest.targetWallet };
+    if (payload.getProtestStatus) return { type: "get_protest_status", target_wallet: payload.getProtestStatus.targetWallet };
+    if (payload.contributeBounty) return { type: "contribute_bounty", item_id: payload.contributeBounty.itemId, qty: payload.contributeBounty.qty };
+    if (payload.getPlayerActivity) return { type: "get_player_activity", target_wallet: payload.getPlayerActivity.targetWallet };
 
     return null;
   } catch {
@@ -344,6 +434,78 @@ export function serializeMessage(msg: ServerMessage): Uint8Array {
         }
       };
       break;
+
+    case "goodwill_update":
+      payload = {
+        goodwillUpdate: {
+          points: msg.points,
+          effectiveTaxRate: msg.effective_tax_rate,
+        },
+      };
+      break;
+
+    case "trader_arrived":
+      payload = {
+        traderArrived: {
+          items: msg.items.map(i => ({ id: i.id, price: i.price, qtyAvailable: i.qty_available })),
+          expiresAt: msg.expires_at,
+        },
+      };
+      break;
+
+    case "chat_message":
+      payload = {
+        chatMessage: {
+          senderId: msg.sender_id,
+          content: msg.content,
+          timestamp: msg.timestamp,
+        },
+      };
+      break;
+
+    case "protest_status":
+      payload = {
+        protestStatus: {
+          targetWallet: msg.target_wallet,
+          status: msg.status,
+          signerCount: msg.signer_count,
+          required: msg.required,
+        },
+      };
+      break;
+
+    case "player_activity":
+      payload = {
+        playerActivity: {
+          targetWallet: msg.target_wallet,
+          activities: msg.activities.map(a => ({
+            action: a.action,
+            details: a.details,
+            timestamp: a.timestamp
+          }))
+        }
+      };
+      break;
+
+    case "commodity_alert":
+      payload = {
+        commodityAlert: {
+          commodityId: msg.commodity_id,
+          alert: msg.alert,
+          volume: msg.volume,
+          priceImpact: msg.price_impact
+        }
+      };
+      break;
+
+    case "system_alert":
+      payload = {
+        systemAlert: {
+          message: msg.message,
+          level: msg.level
+        }
+      };
+      break;
   }
 
   const obj = type.create({ payload });
@@ -417,5 +579,38 @@ interface ProtoPayload {
     id: string;
     eggType: string;
     readyAt: number;
+  };
+  goodwillUpdate?: {
+    points: number;
+    effectiveTaxRate: number;
+  };
+  traderArrived?: {
+    items: Array<{ id: string; price: number; qtyAvailable: number }>;
+    expiresAt: number;
+  };
+  chatMessage?: {
+    senderId: string;
+    content: string;
+    timestamp: number;
+  };
+  protestStatus?: {
+    targetWallet: string;
+    status: string;
+    signerCount: number;
+    required: number;
+  };
+  playerActivity?: {
+    targetWallet: string;
+    activities: { action: string; details: string; timestamp: number }[];
+  };
+  commodityAlert?: {
+    commodityId: string;
+    alert: string;
+    volume: number;
+    priceImpact: number;
+  };
+  systemAlert?: {
+    message: string;
+    level: string;
   };
 }

@@ -23,6 +23,13 @@ import { recordPlayerActivity } from "../economy/population.js";
 import { Treasury } from "../economy/treasury.js";
 import { PricingEngine } from "../economy/pricing.js";
 import { LoanSystem } from "../economy/loans.js";
+import { BlackMarketTrader } from '../events/black_market.js';
+import { SyndicateEngine } from '../social/syndicates.js';
+import { P2PEngine } from '../social/p2p.js';
+import { ProtestEngine } from '../social/protests.js';
+import { BountyEngine } from '../events/bounties.js';
+import { LeaderboardEngine } from '../economy/leaderboard.js';
+import { TrackerEngine } from '../events/tracker.js';
 
 const require = createRequire(import.meta.url);
 const uws = require("uWebSockets.js") as typeof import("uWebSockets.js");
@@ -37,8 +44,12 @@ interface WsUserData {
   authenticated: boolean;
 }
 
-function userTopic(wallet: string): string {
+export function userTopic(wallet: string): string {
   return `user:${wallet}`;
+}
+
+export function syndicateTopic(syndicateId: string): string {
+  return `syndicate:${syndicateId}`;
 }
 
 function send(ws: WebSocket<WsUserData>, msg: ServerMessage): void {
@@ -83,6 +94,34 @@ async function settlePlayerSession(pid: string) {
 export function createWsServer(): void {
   const app = App();
 
+  // Setup tracker broadcasting
+  TrackerEngine.setAlertCallback((commodityId, alertType, volume, priceImpact) => {
+    app.publish(
+      TOPIC_GLOBAL,
+      serializeMessage({
+        type: 'commodity_alert',
+        commodity_id: commodityId,
+        alert: alertType,
+        volume,
+        price_impact: priceImpact
+      } as any),
+      true
+    );
+  });
+
+  // Setup protest targeted broadcasting
+  ProtestEngine.setAlertCallback((targetProfileId, message, level) => {
+    app.publish(
+      `profile:${targetProfileId}`,
+      serializeMessage({
+        type: 'system_alert',
+        message,
+        level
+      } as any),
+      true
+    );
+  });
+
   app.ws<WsUserData>("/ws", {
     compression: uws.DISABLED,
     maxPayloadLength: 16 * 1024,
@@ -120,6 +159,9 @@ export function createWsServer(): void {
             
             await loadPlayerSession(payload.sub);
             await recordPlayerActivity(payload.sub);
+
+            const syndId = await SyndicateEngine.getPlayerSyndicate(payload.sub);
+            if (syndId) ws.subscribe(syndicateTopic(syndId));
 
             send(ws, {
               type: "auth_success",
@@ -164,6 +206,9 @@ export function createWsServer(): void {
 
           await loadPlayerSession(result.profileId);
           await recordPlayerActivity(result.profileId);
+
+          const syndId = await SyndicateEngine.getPlayerSyndicate(result.profileId);
+          if (syndId) ws.subscribe(syndicateTopic(syndId));
 
           send(ws, {
             type: "auth_success",
@@ -220,19 +265,41 @@ export function createWsServer(): void {
             }
             case 'harvest': {
               const res = await FarmingEngine.harvest(pid, msg.plot_id);
-              send(ws, { type: 'action_result', action_type: 'harvest', message: `Harvested ${res.items[0].qty} items (xp: ${res.xp})` });
+              if (res.withered) {
+                send(ws, { type: 'action_result', action_type: 'harvest', message: 'Your crop has withered and died!' });
+              } else {
+                send(ws, { type: 'action_result', action_type: 'harvest', message: `Harvested ${res.items[0]?.qty ?? 0} items (xp: ${res.xp})` });
+              }
               send(ws, { type: 'plot_update', plot_id: msg.plot_id }); // clears it
               break;
             }
             case 'sell': {
               const res = await FarmingEngine.sell(pid, msg.item_id, msg.qty);
-              send(ws, { type: 'action_result', action_type: 'sell', message: `Sold for ${res.earned} tokens` });
+              send(ws, { type: 'action_result', action_type: 'sell', message: `Sold for ${res.earned} tokens (tax: ${res.taxAmount}, rate: ${Math.round(res.effectiveRate * 100)}%)` });
               send(ws, { type: 'balance_update', balance: await getPlayerBalance(pid) });
               break;
             }
             case 'collect_animal': {
               const res = await AnimalEngine.collect(pid, msg.animal_id);
-              send(ws, { type: 'action_result', action_type: 'collect_animal', message: `Collected! Rare dropped: ${res.rare}` });
+              if (res.health_status === 'sick') {
+                send(ws, { type: 'action_result', action_type: 'collect_animal', message: 'Animal is sick! Use medicine to cure it.' });
+              } else if (res.health_status === 'sad') {
+                send(ws, { type: 'action_result', action_type: 'collect_animal', message: 'Animal is sad and refuses to produce. Feed it!' });
+              } else {
+                send(ws, { type: 'action_result', action_type: 'collect_animal', message: `Collected! Rare dropped: ${res.rare}` });
+              }
+              break;
+            }
+            case 'cure_animal': {
+              await AnimalEngine.cureAnimal(pid, msg.animal_id);
+              send(ws, { type: 'action_result', action_type: 'cure_animal', message: 'Animal cured! It is happy again.' });
+              break;
+            }
+            case 'donate_treasury': {
+              const res = await FarmingEngine.donateTreasury(pid, msg.amount);
+              send(ws, { type: 'action_result', action_type: 'donate_treasury', message: `Donated! Earned ${res.goodwillEarned} Goodwill Points.` });
+              send(ws, { type: 'goodwill_update', points: res.totalGoodwill, effective_tax_rate: res.effectiveRate });
+              send(ws, { type: 'balance_update', balance: await getPlayerBalance(pid) });
               break;
             }
             case 'buy_animal': {
@@ -256,6 +323,12 @@ export function createWsServer(): void {
             case 'mate_animals': {
               const res = await AnimalEngine.mateAnimals(pid, msg.sire_id, msg.dam_id);
               send(ws, { type: 'action_result', action_type: 'mate_animals', message: res.message });
+              break;
+            }
+            case 'buy_black_market': {
+              const res = await BlackMarketTrader.buyItem(pid, msg.item_id, msg.qty);
+              send(ws, { type: 'action_result', action_type: 'buy_black_market', message: `Bought for ${res.cost} tokens` });
+              send(ws, { type: 'balance_update', balance: await getPlayerBalance(pid) });
               break;
             }
             case 'buy_incubator': {
@@ -294,6 +367,86 @@ export function createWsServer(): void {
               send(ws, { type: 'balance_update', balance: await getPlayerBalance(pid) });
               break;
             }
+            case 'create_syndicate': {
+              const { syndicateId } = await SyndicateEngine.createSyndicate(pid, msg.name);
+              ws.subscribe(syndicateTopic(syndicateId));
+              send(ws, { type: 'action_result', action_type: 'create_syndicate', message: `Syndicate ${msg.name} created!` });
+              break;
+            }
+            case 'join_syndicate': {
+              await SyndicateEngine.joinSyndicate(pid, msg.syndicate_id);
+              ws.subscribe(syndicateTopic(msg.syndicate_id));
+              send(ws, { type: 'action_result', action_type: 'join_syndicate', message: `Joined syndicate!` });
+              break;
+            }
+            case 'leave_syndicate': {
+              const { syndicateId } = await SyndicateEngine.leaveSyndicate(pid);
+              ws.unsubscribe(syndicateTopic(syndicateId));
+              send(ws, { type: 'action_result', action_type: 'leave_syndicate', message: `Left syndicate.` });
+              break;
+            }
+            case 'kick_member': {
+              await SyndicateEngine.kickMember(pid, msg.profile_id);
+              send(ws, { type: 'action_result', action_type: 'kick_member', message: `Member kicked.` });
+              break;
+            }
+            case 'send_chat': {
+              const chat = await SyndicateEngine.sendChatMessage(pid, msg.message);
+              // broadcast to the syndicate topic
+              app.publish(
+                syndicateTopic(chat.syndicate_id),
+                serializeMessage({
+                  type: 'chat_message',
+                  sender_id: pid,
+                  content: msg.message,
+                  timestamp: new Date(chat.created_at).getTime()
+                } as any),
+                true
+              );
+              break;
+            }
+            case 'transfer_funds': {
+              await P2PEngine.transferFunds(pid, msg.target_wallet, msg.amount);
+              send(ws, { type: 'action_result', action_type: 'transfer_funds', message: `Sent ${msg.amount} tokens to ${msg.target_wallet}` });
+              send(ws, { type: 'balance_update', balance: await getPlayerBalance(pid) });
+              break;
+            }
+            case 'transfer_items': {
+              await P2PEngine.transferItems(pid, msg.target_wallet, msg.item_id, msg.qty);
+              send(ws, { type: 'action_result', action_type: 'transfer_items', message: `Sent ${msg.qty} ${msg.item_id} to ${msg.target_wallet}` });
+              // Assuming client optimistically updates inventory if successful
+              break;
+            }
+            case 'file_protest': {
+              const res = await ProtestEngine.fileProtest(pid, msg.target_wallet);
+              send(ws, { type: 'action_result', action_type: 'file_protest', message: res.message });
+              if (res.status === 'activated') {
+                // If it activated, this player will instantly be docked next time they sell
+              }
+              break;
+            }
+            case 'get_protest_status': {
+              const res = await ProtestEngine.getProtestStatus(msg.target_wallet);
+              send(ws, {
+                type: 'protest_status',
+                target_wallet: msg.target_wallet,
+                status: res.status,
+                signer_count: res.signer_count,
+                required: res.required
+              });
+              break;
+            }
+            case 'contribute_bounty': {
+              const res = await BountyEngine.contribute(pid, msg.qty);
+              send(ws, { type: 'action_result', action_type: 'contribute_bounty', message: res.message });
+              break;
+            }
+          }
+
+          // Trigger leaderboard recalculation after actions that affect wealth
+          // Doing this async after response
+          if (['buy_plot', 'buy_animal', 'sell', 'donate_treasury', 'sell_animal', 'transfer_funds'].includes(msg.type)) {
+            LeaderboardEngine.updatePlayerScore(pid).catch(console.error);
           }
         });
       } catch (err: any) {
@@ -365,11 +518,42 @@ export function createWsServer(): void {
       console.log(
         `[clock] Day ${time.total_days} | Year ${time.year} | ${time.season} day ${time.season_day}`,
       );
+
+      // Check Black Market Trader
+      BlackMarketTrader.tick(time.real_time).then((traderRes) => {
+        if (traderRes.arrived && traderRes.items) {
+          app.publish(
+            TOPIC_GLOBAL,
+            serializeMessage({ type: 'trader_arrived', items: traderRes.items, expires_at: traderRes.expiresAt ?? 0 } as any),
+            true
+          );
+          console.log(`[black_market] Trader arrived! Expires at ${traderRes.expiresAt}`);
+        } else if (traderRes.departed) {
+          console.log(`[black_market] Trader departed.`);
+        }
+      }).catch(console.error);
+
+      // Broadcast Top 10 Leaderboard
+      LeaderboardEngine.getTopPlayers(10).then((top) => {
+        if (top.length > 0) {
+          app.publish(
+            TOPIC_GLOBAL,
+            serializeMessage({ type: 'leaderboard_update', top } as any),
+            true
+          );
+        }
+      }).catch(console.error);
     },
 
     // Every season change: broadcast season_change + push current active event
     (time) => {
       console.log(`[clock] Season → ${time.season} (Year ${time.year})`);
+
+      // Snapshot Leaderboard at End of Year (Winter Day 7)
+      if (time.season === 'winter' && time.season_day === 7) {
+        LeaderboardEngine.snapshot(time.year, time.season).catch(console.error);
+        console.log(`[leaderboard] Year ${time.year} snapshot saved.`);
+      }
 
       app.publish(
         TOPIC_GLOBAL,
@@ -436,4 +620,25 @@ export function createWsServer(): void {
       `[clock]  Year ${time.year} | ${time.season} day ${time.season_day} | next day in ${Math.round((time.next_day_at - Date.now()) / 1000)}s`,
     );
   });
+
+  // Background broadcast for Bounty Progress every 5 seconds
+  // Need to dynamically check it using a basic interval since clock ticks every 10s (game day)
+  setInterval(() => {
+    // Only fetch if active (optimization)
+    import('../economy/redis.js').then(({ redis }) => {
+      redis.mGet(['bounty:active', 'bounty:current_qty', 'bounty:target_qty']).then(([active, current, target]) => {
+        if (active === '1') {
+          app.publish(
+            TOPIC_GLOBAL,
+            serializeMessage({
+              type: 'bounty_progress',
+              current: parseInt(current || '0', 10),
+              target: parseInt(target || '0', 10)
+            } as any),
+            true
+          );
+        }
+      });
+    });
+  }, 5000);
 }
