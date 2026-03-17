@@ -79,7 +79,25 @@ export type Season = "spring" | "summer" | "autumn" | "winter";
 
 const SEASON_ORDER: readonly Season[] = ["spring", "summer", "autumn", "winter"];
 
-const EPOCH = Date.now();
+let EPOCH = 0;
+
+/**
+ * Must be called at boot to load the persistent epoch from Redis.
+ * Redis is populated by Treasury.init() which loads epoch_ms from Supabase.
+ */
+export async function initEpoch(): Promise<void> {
+  const { redis } = await import('../economy/redis.js');
+  const stored = await redis.get('economy:epoch');
+  if (stored) {
+    EPOCH = parseInt(stored, 10);
+    console.log(`[clock] Loaded persistent epoch: ${EPOCH}`);
+  } else {
+    // First-ever boot: set epoch to now and persist it
+    EPOCH = Date.now();
+    await redis.set('economy:epoch', EPOCH.toString());
+    console.log(`[clock] Created new epoch: ${EPOCH}`);
+  }
+}
 
 export interface GameTime {
   year: number;

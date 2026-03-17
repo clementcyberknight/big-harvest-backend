@@ -22,7 +22,16 @@ export type ParsedClientMessage =
   | {
       type: "heartbeat";
       payload?: { local_time?: number; last_action_id?: string };
-    };
+    }
+  | { type: "buy_plot"; tier: string }
+  | { type: "buy_seed"; crop_id: string; qty: number }
+  | { type: "plant_crop"; plot_id: string; crop_id: string }
+  | { type: "harvest"; plot_id: string }
+  | { type: "sell"; item_id: string; qty: number }
+  | { type: "collect_animal"; animal_id: string }
+  | { type: "craft"; recipe_id: string }
+  | { type: "request_loan"; amount: number }
+  | { type: "repay_loan"; loan_id: string; amount: number };
 
 // ── Server message types ─────────────────────────────────────────────────────
 
@@ -50,7 +59,16 @@ export type ServerMessage =
       type: "season_change";
       payload: { new_season: string; year: number; started_at: number };
     }
-  | { type: "game_event"; payload: MarketEvent };
+  | { type: "game_event"; payload: MarketEvent }
+  | { type: "balance_update"; balance: number }
+  | { type: "inventory_update"; item_id: string; quantity: number }
+  | { type: "plot_update"; plot_id: string; crop_id?: string; planted_at?: number; boost_applied?: boolean }
+  | { type: "action_result"; action_type: string; message: string }
+  | { type: "action_error"; action_type: string; error: string }
+  | { type: "loan_result"; loan_id: string; amount: number; due_at: number }
+  | { type: "craft_complete"; item_id: string; quantity: number }
+  | { type: "price_update"; prices: any[] }
+  | { type: "loan_default"; seized_assets: Array<{ type: string; id: string; value: number }>; remaining_debt: number };
 
 function encodeVarint(value: number): Uint8Array {
   const bytes: number[] = [];
@@ -94,21 +112,26 @@ export function parseMessage(data: ArrayBuffer): ParsedClientMessage | null {
     const msgBytes = bytes.subarray(bytesRead, bytesRead + size);
     const type = getClientType();
     const msg = type.decode(msgBytes) as protobuf.Message & {
-      payload?: { auth?: object; heartbeat?: object };
+      payload?: {
+        auth?: object; 
+        heartbeat?: object;
+        buyPlot?: { tier: string };
+        buySeed?: { cropId: string, qty: number };
+        plantCrop?: { plotId: string, cropId: string };
+        harvest?: { plotId: string };
+        sell?: { itemId: string, qty: number };
+        collectAnimal?: { animalId: string };
+        craft?: { recipeId: string };
+        requestLoan?: { amount: number };
+        repayLoan?: { loanId: string; amount: number };
+      };
     };
 
     const payload = msg.payload;
     if (!payload) return null;
 
     if (payload.auth) {
-      const a = payload.auth as {
-        publicKey?: string;
-        signature?: string;
-        nonce?: string;
-        timestamp?: number;
-        sessionToken?: string;
-        deviceInfo?: string;
-      };
+      const a = payload.auth as any;
       return {
         type: "auth",
         public_key: a.publicKey,
@@ -121,15 +144,22 @@ export function parseMessage(data: ArrayBuffer): ParsedClientMessage | null {
     }
 
     if (payload.heartbeat) {
-      const h = payload.heartbeat as {
-        localTime?: number;
-        lastActionId?: string;
-      };
+      const h = payload.heartbeat as any;
       return {
         type: "heartbeat",
         payload: { local_time: h.localTime, last_action_id: h.lastActionId },
       };
     }
+
+    if (payload.buyPlot) return { type: "buy_plot", tier: payload.buyPlot.tier };
+    if (payload.buySeed) return { type: "buy_seed", crop_id: payload.buySeed.cropId, qty: payload.buySeed.qty };
+    if (payload.plantCrop) return { type: "plant_crop", plot_id: payload.plantCrop.plotId, crop_id: payload.plantCrop.cropId };
+    if (payload.harvest) return { type: "harvest", plot_id: payload.harvest.plotId };
+    if (payload.sell) return { type: "sell", item_id: payload.sell.itemId, qty: payload.sell.qty };
+    if (payload.collectAnimal) return { type: "collect_animal", animal_id: payload.collectAnimal.animalId };
+    if (payload.craft) return { type: "craft", recipe_id: payload.craft.recipeId };
+    if (payload.requestLoan) return { type: "request_loan", amount: payload.requestLoan.amount };
+    if (payload.repayLoan) return { type: "repay_loan", loan_id: payload.repayLoan.loanId, amount: payload.repayLoan.amount };
 
     return null;
   } catch {
@@ -228,6 +258,69 @@ export function serializeMessage(msg: ServerMessage): Uint8Array {
       };
       break;
     }
+
+    case "balance_update":
+      payload = { balanceUpdate: { balance: msg.balance } };
+      break;
+
+    case "inventory_update":
+      payload = { inventoryUpdate: { itemId: msg.item_id, quantity: msg.quantity } };
+      break;
+
+    case "plot_update":
+      payload = {
+        plotUpdate: {
+          plotId: msg.plot_id,
+          cropId: msg.crop_id || "",
+          plantedAt: msg.planted_at || 0,
+          boostApplied: msg.boost_applied || false
+        }
+      };
+      break;
+
+    case "action_result":
+      payload = { actionResult: { actionType: msg.action_type, message: msg.message } };
+      break;
+
+    case "action_error":
+      payload = { actionError: { actionType: msg.action_type, error: msg.error } };
+      break;
+
+    case "loan_result":
+      payload = {
+        loanResult: {
+          loanId: msg.loan_id,
+          amount: msg.amount,
+          dueAt: msg.due_at,
+        },
+      };
+      break;
+
+    case "craft_complete":
+      payload = { craftComplete: { itemId: msg.item_id, quantity: msg.quantity } };
+      break;
+
+    case "loan_default":
+      payload = {
+        loanDefault: {
+          seizedAssets: msg.seized_assets.map(a => ({ type: a.type, id: a.id, value: a.value })),
+          remainingDebt: msg.remaining_debt,
+        },
+      };
+      break;
+
+    case "price_update":
+      payload = {
+        priceUpdate: {
+          prices: msg.prices.map(p => ({
+            id: p.id,
+            buyPrice: p.current_buy_price,
+            sellPrice: p.current_sell_price,
+            demandMult: p.demand_multiplier
+          }))
+        }
+      };
+      break;
   }
 
   const obj = type.create({ payload });
@@ -269,5 +362,24 @@ interface ProtoPayload {
     playerTip: string;
     generatedAt: number;
     expiresAt: number;
+  };
+  balanceUpdate?: { balance: number };
+  inventoryUpdate?: { itemId: string; quantity: number };
+  plotUpdate?: { plotId: string; cropId: string; plantedAt: number; boostApplied: boolean };
+  actionResult?: { actionType: string; message: string };
+  actionError?: { actionType: string; error: string };
+  loanResult?: { loanId: string; amount: number; dueAt: number };
+  craftComplete?: { itemId: string; quantity: number };
+  loanDefault?: {
+    seizedAssets: Array<{ type: string; id: string; value: number }>;
+    remainingDebt: number;
+  };
+  priceUpdate?: {
+    prices: Array<{
+      id: string;
+      buyPrice: number;
+      sellPrice: number;
+      demandMult: number;
+    }>;
   };
 }

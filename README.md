@@ -54,7 +54,8 @@ proto/
 2. Receive `auth_challenge` (`nonce`, `timestamp`)
 3. Sign `nonce:timestamp` with Solana wallet (Ed25519)
 4. Send `auth` with `public_key`, `signature`, `nonce`, `timestamp`
-5. Receive `auth_success` + full game state snapshot
+5. New players automatically receive a dynamic Sign-Up Bonus (2 starter plots + 2 cheapest seeds) from the Treasury.
+6. Receive `auth_success` + full game state snapshot (clock, market prices, AI event).
 
 **Reconnect:** Send `auth` with `session_token` (your `access_token`).
 
@@ -65,15 +66,16 @@ proto/
 All messages are **size-delimited protobuf**: `varint(length) + message_bytes`.
 See `proto/ws_messages.proto` for the full schema.
 
-| Trigger                | Message sent                                                  | Topic    |
-| ---------------------- | ------------------------------------------------------------- | -------- |
-| On connect             | `auth_challenge`                                              | direct   |
-| After auth             | `auth_success` + `game_clock` + `market_pulse` + `game_event` | direct   |
-| Every game day (1 min) | `game_clock`                                                  | `market` |
-| Every season (7 days)  | `season_change` + `game_event`                                | `global` |
-| Every real hour        | `game_event` (new AI event)                                   | `global` |
-| Every 24 real hours    | `market_pulse` (RapidAPI update)                              | `market` |
-| On heartbeat           | `heartbeat_ack`                                               | direct   |
+| Trigger                         | Message sent                                                  | Topic    |
+| ------------------------------- | ------------------------------------------------------------- | -------- |
+| On connect                      | `auth_challenge`                                              | direct   |
+| After auth                      | `auth_success` + `game_clock` + `market_pulse` + `game_event` | direct   |
+| Every game day (1 min)          | `game_clock`                                                  | `market` |
+| Every season (7 days)           | `season_change` + `game_event`                                | `global` |
+| Every 30 real seconds           | `market_pulse` + `price_update` (Dynamic pricing tick)        | `market` |
+| Every 30 real minutes           | `game_event` (new AI monetary policy event)                   | `global` |
+| On collateral seizure (Default) | `loan_default`                                                | `profile`|
+| On heartbeat                    | `heartbeat_ack`                                               | direct   |
 
 ## HTTP Endpoints
 
@@ -171,20 +173,18 @@ All timing is defined in `src/game/clock.ts`. The game clock resets on server re
 
 Speed boost reduces harvest time by up to 25% (`MAX_HARVEST_BOOST = 0.25`).
 
-## Market Pricing
+## Market Pricing (The Economy)
 
-Prices update once per real day via RapidAPI. Each game crop is **pegged** to a real commodity:
+Prices are fully dynamic and recalculate every 30 seconds based on 4 factors:
+1. **Treasury Ratio**: Scarcity valve based on how much of the 50M supply cap the Treasury holds.
+2. **Demand Multiplier**: Real-time sales vs purchases tracking per commodity.
+3. **Token Velocity**: Inflationary pressure based on transaction frequency.
+4. **AI Policy Events**: Macro-economic events (Taxes, Subsidies, Crunches).
 
-| Real commodity | Game crops                                       |
-| -------------- | ------------------------------------------------ |
-| US Wheat       | wheat, carrot, lettuce                           |
-| US Corn        | corn, tomato, potato, pumpkin, egg, milk, pork   |
-| US Sugar #11   | sugarcane, watermelon, strawberries, blueberries |
-| US Cotton #2   | cotton, raw_wool, indigo, marigold, madder       |
-| US Soybeans    | sunflower                                        |
-| US Coffee C    | coffee                                           |
+`sell_price = base_price × treasury_mult × demand_mult × velocity_mult × event_mult`
+`buy_price = sell_price × 0.3` (seeds are cheaper than produce)
 
-`sell_price = base_price × price_scale × market_multiplier × event_multiplier`
+Real-world commodities (RapidAPI) are used as peg foundations but the in-game economy is isolated and self-balancing based on real player activity.
 
 ## Commodity Categories
 

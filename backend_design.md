@@ -38,84 +38,87 @@ This document outlines the backend stack, database schema, WebSocket protocols, 
 ### `profiles` (Wallet = Identity)
 - `id`: uuid (PK)
 - `wallet_address`: text (unique, indexed) — Solana pubkey
-- `username`: text
-- `xp`: bigint (default 0)
-- `coins`: bigint (default 100)
-- `last_sync_at`: timestamptz
-- `daily_donations_count`: integer (resets UTC 00:00)
-- `created_at`, `updated_at`: timestamptz
+- `has_defaulted`: boolean (default false) — Set true if a loan is seized
+- `coins`: bigint (default 0) — Player's global balance
 
-### `refresh_tokens`
+### `treasury` (Single Row)
 - `id`: uuid (PK)
-- `profile_id`: uuid (FK → profiles)
-- `token_hash`: text (SHA-256 of token)
-- `device_info`: text (optional)
-- `expires_at`: timestamptz
-- `created_at`: timestamptz
-- `revoked_at`: timestamptz (NULL = active)
+- `balance`: bigint (default 50,000,000)
+- `epoch_ms`: bigint (persistent game clock start time)
 
-### `crops` (Configuration - Read Only)
+### `commodity_prices` (Persistence layer for DP Engine)
+- `id`: text (PK, e.g. 'wheat')
+- `current_buy_price`, `current_sell_price`: numeric
+- `demand_multiplier`: numeric (default 1.0)
+- `sales_last_2h`, `purchases_last_2h`: int
+
+### `price_history` (Analytics append-only log)
 - `id`: uuid (PK)
-- `name`: text
-- `growth_time_seconds`: integer
-- `base_buy_price`: integer
-- `base_sell_price`: integer
-- `xp_on_harvest`: integer
+- `commodity_id`: text
+- `snapshot_at`: timestamptz
 
 ### `plots` (Active Farm State)
 - `id`: uuid (PK)
-- `user_id`: uuid (FK → profiles)
-- `crop_id`: uuid (FK, nullable)
-- `planted_at`: timestamptz (nullable)
-- `boost_applied`: boolean
+- `profile_id`: uuid (FK → profiles)
+- `plot_tier`: text ('starter', 'fertile', 'premium')
+- `slot_index`: int
+- `crop_id`: text (nullable)
+- `planted_at`: bigint (nullable)
+- `locked_for_loan`: boolean (default false)
 
 ### `inventory`
-- `user_id`: uuid (FK)
-- `item_type`: text
-- `item_id`: uuid
+- `profile_id`: uuid (FK)
+- `item_id`: text
 - `quantity`: integer
 
-### `orders_log` (Anti-Cheating & Audit)
+### `loans`
 - `id`: uuid (PK)
-- `user_id`: uuid (FK)
-- `action`: text ('harvest', 'sell', 'craft')
-- `details`: jsonb
-- `server_timestamp`: timestamptz (default now())
+- `profile_id`: uuid (FK)
+- `principal`, `total_due`: bigint
+- `interest_rate`: numeric
+- `status`: text ('active', 'repaid', 'defaulted')
+- `due_at`, `grace_until`: bigint
+- `collateral`: jsonb (snapshot of pledged plots/animals)
+
+### `ledger` (Double-Entry Log)
+- `id`: uuid (PK)
+- `from_type`, `to_type`: text ('player' | 'treasury')
+- `from_id`, `to_id`: uuid
+- `amount`: bigint
+- `reason`: text
 
 ---
 
 ## 3. WebSocket Protocols (uWebSockets.js)
 
 ### Topics
-- `/market`: Price updates every 5 minutes
-- `/user/{wallet}`: Private channel per user
-- `/global`: Leaderboard, announcements
+- `/market`: Price updates every 30 seconds
+- `/global`: Season changes, AI events
+- `/profile/{uuid}`: Private channel per user (e.g. for `craft_complete` or `loan_default`)
 
-### Message Types (Protobuf / JSON)
-
-#### Server → Client
-- `auth_challenge` — nonce, timestamp, expires_in
-- `auth_success` — access_token, refresh_token, expires_in
-- `auth_failed` — reason
-- `market_pulse` — crop multipliers, timestamp
-
-#### Client → Server
-- `auth` — public_key, signature, nonce (first connect) OR session_token (reconnect)
-- `heartbeat` — local_time, last_action_id
+### Game Loop Handlers
+- `buy_plot`, `buy_seed`, `plant_crop`, `harvest`, `sell`
+- `craft`, `collect_animal`
+- `request_loan`, `repay_loan`
 
 ---
 
-## 4. Market Price Engine
+## 4. Market Price Engine (The Economy)
 
-1. Fetch real-world commodity data (undici)
-2. Volatility Factor: `(current / historical_avg) * random_variation`
-3. In-memory `price_multipliers` cache
-4. Broadcast to `/market` every 5 minutes
+1. **Redis Hot Storage**: All active interactions hit Redis (target <100ms response).
+2. **Pricing Factors**: 
+   - `treasury_ratio`: Scarcity valve based on how much of the 50M cap the Treasury holds.
+   - `demand_mult`: Per-commodity volume tracker.
+   - `velocity_mult`: Speed of token circulation.
+   - `event_mult`: Global or specific multipliers from the AI Engine.
+3. **Tick Rate**: Prices recalculate every 30 seconds.
+4. **Persistence**: Batched back to `commodity_prices` in Supabase every 60 seconds.
 
 ---
 
-## 5. Anti-Cheating Strategy
+## 5. Economy Systems & Anti-Cheating
 
-- **Time Check**: `delta = server_now - planted_at`
-- **Growth Threshold**: Reject if `delta < crop.growth_time_seconds * (1 - MAX_BOOST)`
-- **Session Check**: Verify `profile_id` in JWT matches DB update
+- **Idempotency**: All player actions are wrapped in a per-player Redis mutex lock (`utils/lock.ts`) to prevent double-spending and race conditions.
+- **Strict Ledger**: Tokens only move securely between the Treasury and Players via Double-Entry Lua Scripts in Redis.
+- **Server-Authoritative Time**: Growth checks (`planted_at + growth_time`) are computed on the server based on the persistent `treasury.epoch_ms`.
+- **Active Population Scaling**: Global demand adjusts based on the 1-hour rolling active player count in Redis.

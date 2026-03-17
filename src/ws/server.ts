@@ -13,6 +13,16 @@ import { registerRefreshRoute } from "../http/refresh.js";
 import { registerCommoditiesRoute } from "../http/commodities.js";
 import { registerEventsRoute } from "../http/events.js";
 import { env } from "../config/env.js";
+import { FarmingEngine } from "../game/farming.js";
+import { AnimalEngine } from "../game/animals.js";
+import { CraftingEngine } from "../game/crafting.js";
+import { getPlayerBalance, setPlayerBalance } from "../economy/ledger.js";
+import { supabase } from "../db/supabase.js";
+import { withLock } from "../utils/lock.js";
+import { recordPlayerActivity } from "../economy/population.js";
+import { Treasury } from "../economy/treasury.js";
+import { PricingEngine } from "../economy/pricing.js";
+import { LoanSystem } from "../economy/loans.js";
 
 const require = createRequire(import.meta.url);
 const uws = require("uWebSockets.js") as typeof import("uWebSockets.js");
@@ -49,6 +59,25 @@ function sendInitialState(ws: WebSocket<WsUserData>): void {
   if (event) {
     send(ws, { type: "game_event", payload: event });
   }
+
+  // Ensure balance is sent down
+  const pid = ws.getUserData().profileId;
+  if (pid) {
+    getPlayerBalance(pid).then(bal => {
+      send(ws, { type: "balance_update", balance: bal });
+    }).catch(console.error);
+  }
+}
+
+async function loadPlayerSession(pid: string) {
+  const { data } = await supabase.from('profiles').select('coins').eq('id', pid).single();
+  const coins = data?.coins || 0;
+  await setPlayerBalance(pid, coins);
+}
+
+async function settlePlayerSession(pid: string) {
+  const bal = await getPlayerBalance(pid);
+  await supabase.from('profiles').update({ coins: bal }).eq('id', pid);
 }
 
 export function createWsServer(): void {
@@ -85,8 +114,13 @@ export function createWsServer(): void {
             ws.getUserData().wallet = payload.wallet;
             ws.getUserData().authenticated = true;
             ws.subscribe(userTopic(payload.wallet));
+            ws.subscribe(`profile:${payload.sub}`);
             ws.subscribe(TOPIC_MARKET);
             ws.subscribe(TOPIC_GLOBAL);
+            
+            await loadPlayerSession(payload.sub);
+            await recordPlayerActivity(payload.sub);
+
             send(ws, {
               type: "auth_success",
               access_token: msg.session_token,
@@ -124,8 +158,12 @@ export function createWsServer(): void {
           ws.getUserData().wallet = result.wallet;
           ws.getUserData().authenticated = true;
           ws.subscribe(userTopic(result.wallet));
+          ws.subscribe(`profile:${result.profileId}`);
           ws.subscribe(TOPIC_MARKET);
           ws.subscribe(TOPIC_GLOBAL);
+
+          await loadPlayerSession(result.profileId);
+          await recordPlayerActivity(result.profileId);
 
           send(ws, {
             type: "auth_success",
@@ -143,10 +181,81 @@ export function createWsServer(): void {
 
       if (msg.type === "heartbeat") {
         if (!ws.getUserData().authenticated) return;
+        const pid = ws.getUserData().profileId;
+        if (pid) recordPlayerActivity(pid).catch(console.error);
+
         send(ws, {
           type: "heartbeat_ack",
           payload: { server_time: Math.floor(Date.now() / 1000) },
         });
+        return;
+      }
+
+      // --- Authenticated Gameplay Actions ---
+      if (!ws.getUserData().authenticated || !ws.getUserData().profileId) return;
+      const pid = ws.getUserData().profileId as string;
+
+      try {
+        await withLock(`player:${pid}`, async () => {
+          switch (msg.type) {
+            case 'buy_plot': {
+              const res = await FarmingEngine.buyPlot(pid, msg.tier as any);
+              send(ws, { type: 'action_result', action_type: 'buy_plot', message: 'Plot purchased' });
+              send(ws, { type: 'plot_update', plot_id: res.id });
+              send(ws, { type: 'balance_update', balance: await getPlayerBalance(pid) });
+              break;
+            }
+            case 'buy_seed': {
+              await FarmingEngine.buySeed(pid, msg.crop_id, msg.qty);
+              send(ws, { type: 'action_result', action_type: 'buy_seed', message: `Bought ${msg.qty} ${msg.crop_id} seeds` });
+              send(ws, { type: 'balance_update', balance: await getPlayerBalance(pid) });
+              // Note: In real app, we would query DB to send exact inventory count update
+              break;
+            }
+            case 'plant_crop': {
+              await FarmingEngine.plantCrop(pid, msg.plot_id, msg.crop_id);
+              send(ws, { type: 'action_result', action_type: 'plant_crop', message: `Planted ${msg.crop_id}` });
+              send(ws, { type: 'plot_update', plot_id: msg.plot_id, crop_id: msg.crop_id, planted_at: Date.now(), boost_applied: false });
+              break;
+            }
+            case 'harvest': {
+              const res = await FarmingEngine.harvest(pid, msg.plot_id);
+              send(ws, { type: 'action_result', action_type: 'harvest', message: `Harvested ${res.items[0].qty} items (xp: ${res.xp})` });
+              send(ws, { type: 'plot_update', plot_id: msg.plot_id }); // clears it
+              break;
+            }
+            case 'sell': {
+              const res = await FarmingEngine.sell(pid, msg.item_id, msg.qty);
+              send(ws, { type: 'action_result', action_type: 'sell', message: `Sold for ${res.earned} tokens` });
+              send(ws, { type: 'balance_update', balance: await getPlayerBalance(pid) });
+              break;
+            }
+            case 'collect_animal': {
+              const res = await AnimalEngine.collect(pid, msg.animal_id);
+              send(ws, { type: 'action_result', action_type: 'collect_animal', message: `Collected! Rare dropped: ${res.rare}` });
+              break;
+            }
+            case 'craft': {
+              const res = await CraftingEngine.startCrafting(pid, msg.recipe_id);
+              send(ws, { type: 'action_result', action_type: 'craft', message: `Crafting started... ready at ${res.ready_at}` });
+              break;
+            }
+            case 'request_loan': {
+              const res = await LoanSystem.requestLoan(pid, msg.amount);
+              send(ws, { type: 'loan_result', loan_id: res.id, amount: msg.amount, due_at: res.due_at });
+              send(ws, { type: 'balance_update', balance: await getPlayerBalance(pid) });
+              break;
+            }
+            case 'repay_loan': {
+              const res = await LoanSystem.repayLoan(pid, msg.loan_id, msg.amount);
+              send(ws, { type: 'action_result', action_type: 'repay_loan', message: `Repaid ${msg.amount}. Paid off? ${res.isPaidOff}` });
+              send(ws, { type: 'balance_update', balance: await getPlayerBalance(pid) });
+              break;
+            }
+          }
+        });
+      } catch (err: any) {
+        send(ws, { type: 'action_error', action_type: msg.type, error: err.message || 'Action failed' });
       }
     },
 
@@ -155,12 +264,56 @@ export function createWsServer(): void {
       if (data.wallet) ws.unsubscribe(userTopic(data.wallet));
       ws.unsubscribe(TOPIC_MARKET);
       ws.unsubscribe(TOPIC_GLOBAL);
+      
+      if (data.profileId) {
+        settlePlayerSession(data.profileId).catch(console.error);
+      }
     },
   });
 
   registerRefreshRoute(app);
   registerCommoditiesRoute(app);
   registerEventsRoute(app);
+
+  CraftingEngine.onComplete = (pid, itemId, qty) => {
+    // In uWebSockets, we need to know the wallet to find the topic.
+    // However, our `pid` is the profile ID. We can either query the DB for the wallet,
+    // or we can just subscribe users to a `profile:${pid}` topic instead.
+    // Let's use `profile:${pid}` for targeted notifications.
+    app.publish(`profile:${pid}`, serializeMessage({ type: 'craft_complete', item_id: itemId, quantity: qty }), true);
+  };
+
+  LoanSystem.onSeizure = (pid, seizedAssets, remainingDebt) => {
+    app.publish(
+      `profile:${pid}`,
+      serializeMessage({
+        type: 'loan_default',
+        seized_assets: seizedAssets,
+        remaining_debt: remainingDebt,
+      }),
+      true
+    );
+    console.log(`[loan] Seizure notification sent to player ${pid}: ${seizedAssets.length} assets seized, debt: ${remainingDebt}`);
+  };
+
+  // Pricing recalculation every 30s (spec §3)
+  setInterval(() => {
+    PricingEngine.recalculateAll().catch(console.error);
+  }, 30 * 1000);
+
+  // Background Database Sync Loop (Every 60s)
+  let syncCount = 0;
+  setInterval(() => {
+    Treasury.syncToDB().catch(console.error);
+    PricingEngine.syncToDB().catch(console.error);
+    LoanSystem.processSeizures().catch(console.error);
+    
+    syncCount++;
+    if (syncCount % 5 === 0) {
+      Treasury.auditIntegrity().catch(console.error);
+      PricingEngine.snapshotPriceHistory().catch(console.error);
+    }
+  }, 60 * 1000);
 
   startGameClock(
     // Every game day: broadcast game_clock to all market subscribers
@@ -218,12 +371,16 @@ export function createWsServer(): void {
     );
   });
 
-  startMarketEngine((pulse) => {
+  startMarketEngine(async (pulse) => {
     const bytes = serializeMessage({
       type: "market_pulse",
       payload: { ...pulse.multipliers, timestamp: pulse.timestamp },
     });
     app.publish(TOPIC_MARKET, bytes, true);
+
+    // Also send the full price update as requested in architecture §9
+    const prices = await PricingEngine.getAllPrices();
+    app.publish(TOPIC_MARKET, serializeMessage({ type: 'price_update', prices } as any), true);
   });
 
   app.listen(env.port, (listenSocket: us_listen_socket | false) => {

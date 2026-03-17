@@ -15,4 +15,5 @@ export const env = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   rapidApiKey: process.env.RAPIDAPI_KEY ?? "",
   googleAiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? "",
+  redisUrl: process.env.REDIS_URL ?? "",
 } as const;

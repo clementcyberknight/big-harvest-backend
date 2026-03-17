@@ -5,6 +5,10 @@
 import { randomUUID } from 'node:crypto';
 import { supabase } from '../db/supabase.js';
 import { verifyWalletSignature } from './verify.js';
+import { Treasury } from '../economy/treasury.js';
+import { PricingEngine } from '../economy/pricing.js';
+import { executeTransfer } from '../economy/ledger.js';
+import { GAME_CROPS } from '../market/crops.js';
 import {
   createAccessToken,
   createRefreshToken,
@@ -52,20 +56,62 @@ export async function authenticateWithWallet(
   const valid = await verifyWalletSignature(message, signature, publicKey);
   if (!valid) return { error: 'Invalid signature' };
 
-  const { data: profile, error: upsertError } = await supabase
+  // Try to find the profile first
+  let { data: profile } = await supabase
     .from('profiles')
-    .upsert(
-      {
-        wallet_address: publicKey,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'wallet_address', ignoreDuplicates: false }
-    )
     .select('id')
+    .eq('wallet_address', publicKey)
     .single();
 
-  if (upsertError || !profile) {
-    return { error: 'Failed to create/update profile' };
+
+  // If missing, create it
+  if (!profile) {
+    const { data: newProfile, error: insertError } = await supabase
+      .from('profiles')
+      .insert({ wallet_address: publicKey, updated_at: new Date().toISOString() })
+      .select('id')
+      .single();
+
+    if (insertError || !newProfile) {
+      return { error: 'Failed to create profile' };
+    }
+    profile = newProfile;
+
+    // Disburse Dynamic Sign-Up Bonus via Treasury Ledger
+    try {
+      // 1. Calculate dynamic costs
+      const plotPrice = await PricingEngine.getPlotPrice('starter');
+      let cheapestSeed = 999999;
+      for (const crop of GAME_CROPS) {
+        const state = await PricingEngine.getState(crop.id);
+        if (state && state.current_buy_price < cheapestSeed) {
+          cheapestSeed = state.current_buy_price;
+        }
+      }
+      if (cheapestSeed === 999999) cheapestSeed = 10; // Fallback
+
+      // 2 * plot + 2 * seeds
+      const signupBonus = (2 * plotPrice) + (2 * cheapestSeed);
+
+      // 2. Transfer from Treasury to Player using Ledger
+      const treasuryId = await Treasury.getId();
+      await executeTransfer({
+        fromType: 'treasury', 
+        fromId: treasuryId,
+        toType: 'player', 
+        toId: newProfile.id,
+        amount: signupBonus,
+        reason: 'signup_bonus',
+        metadata: {
+          plot_price: plotPrice,
+          seed_price: cheapestSeed
+        }
+      });
+      console.log(`Disbursed dynamic sign-up bonus: ${signupBonus} tokens to new player ${profile.id}`);
+    } catch (err) {
+      console.error('Failed to issue sign-up bonus:', err);
+      // We don't fail the auth if bonus fails, but we log the critical error
+    }
   }
 
   const [accessToken, { token: refreshToken }] = await Promise.all([
