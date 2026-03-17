@@ -72,24 +72,8 @@ export class LoanSystem {
 
     if (animals) {
       for (const animal of animals) {
-        let val = 0;
-        switch (animal.animal_type) {
-          case "chicken":
-            val = 100;
-            break;
-          case "cow":
-            val = 300;
-            break;
-          case "pig":
-            val = 400;
-            break;
-          case "sheep":
-            val = 250;
-            break;
-          case "bee":
-            val = 200;
-            break;
-        }
+        // Use live dynamic pricing for animal collateral value
+        const val = await PricingEngine.getAnimalPrice(animal.animal_type);
         totalValue += val;
         collateral.push({ type: "animal", id: animal.id, value: val });
       }

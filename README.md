@@ -153,15 +153,21 @@ All timing is defined in `src/game/clock.ts`. The game clock resets on server re
 | 3       | Watermelon, Pumpkin, Coffee, Strawberries    | 5 min |
 | Special | Indigo, Marigold, Madder                     | 3 min |
 
-**Animal production:**
+**Animal husbandry (real minutes):**
+Animals operate on a 10-minute collect cycle. They can be fed `animal_feed` to double their output and increase their rare drop chance by 1.5x.
 
-| Animal  | Produces          | Cycle  |
-| ------- | ----------------- | ------ |
-| Chicken | Egg               | 1 min  |
-| Cow     | Milk              | 4 min  |
-| Sheep   | Wool              | 6 min  |
-| Bee     | Honey / Honeycomb | 8 min  |
-| Pig     | Pork              | 12 min |
+| Animal  | Produces          | Rare Drop | Base Rare Rate|
+| ------- | ----------------- | --------- | ------------- |
+| Chicken | Egg               | Golden Egg| 5%            |
+| Cow     | Milk              | Rich Milk | 8%            |
+| Sheep   | Wool              | -         | -             |
+| Bee     | Honey / Honeycomb | Royal Jell| 3%            |
+| Pig     | Pork              | Truffle   | 4%            |
+
+**Mating & Incubation:**
+- Animals of the same species can be mated (2-hour cooldown).
+- **Mammals:** undergo a 1-hour gestation period.
+- **Birds:** drop a fertilzed egg that must be placed in a purchased **Incubator** for 30 minutes.
 
 **Crafting time (real seconds):**
 

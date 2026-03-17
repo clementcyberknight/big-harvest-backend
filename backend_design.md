@@ -66,6 +66,27 @@ This document outlines the backend stack, database schema, WebSocket protocols, 
 - `planted_at`: bigint (nullable)
 - `locked_for_loan`: boolean (default false)
 
+### `animals` (Husbandry State)
+- `id`: uuid (PK)
+- `profile_id`: uuid (FK)
+- `animal_type`: text (e.g. 'chicken', 'cow')
+- `last_collected`: bigint
+- `locked_for_loan`: boolean (default false)
+- `last_mated_at`: bigint
+- `gestation_ready_at`: bigint
+- `is_fed`: boolean
+- `parents`: jsonb
+- `purchase_price`: bigint
+
+### `incubators` (Egg Hatching)
+- `id`: uuid (PK)
+- `profile_id`: uuid (FK)
+- `egg_type`: text
+- `started_at`: bigint
+- `ready_at`: bigint
+- `locked_for_loan`: boolean
+- `purchase_price`: bigint
+
 ### `inventory`
 - `profile_id`: uuid (FK)
 - `item_id`: text
@@ -99,6 +120,8 @@ This document outlines the backend stack, database schema, WebSocket protocols, 
 ### Game Loop Handlers
 - `buy_plot`, `buy_seed`, `plant_crop`, `harvest`, `sell`
 - `craft`, `collect_animal`
+- `buy_animal`, `sell_animal`, `feed_animal`, `mate_animals`
+- `buy_incubator`, `start_incubation`, `finish_incubation`
 - `request_loan`, `repay_loan`
 
 ---

@@ -47,6 +47,35 @@ message ActionCraft {
   string recipe_id = 1;
 }
 
+message ActionBuyAnimal {
+  string animal_type = 1;
+}
+
+message ActionSellAnimal {
+  string animal_id = 1;
+}
+
+message ActionFeedAnimal {
+  string animal_id = 1;
+}
+
+message ActionMateAnimals {
+  string sire_id = 1;
+  string dam_id = 2;
+}
+
+message ActionBuyIncubator {
+}
+
+message ActionStartIncubation {
+  string incubator_id = 1;
+  string egg_item_id = 2;
+}
+
+message ActionFinishIncubation {
+  string incubator_id = 1;
+}
+
 message ClientMessage {
   oneof payload {
     Auth auth = 1;
@@ -58,6 +87,13 @@ message ClientMessage {
     ActionSell sell = 7;
     ActionCollectAnimal collect_animal = 8;
     ActionCraft craft = 9;
+    ActionBuyAnimal buy_animal = 10;
+    ActionSellAnimal sell_animal = 11;
+    ActionFeedAnimal feed_animal = 12;
+    ActionMateAnimals mate_animals = 13;
+    ActionBuyIncubator buy_incubator = 14;
+    ActionStartIncubation start_incubation = 15;
+    ActionFinishIncubation finish_incubation = 16;
   }
 }
 
@@ -146,6 +182,21 @@ message ActionError {
   string error = 2;
 }
 
+message AnimalUpdate {
+  string id = 1;
+  string animal_type = 2;
+  bool locked_for_loan = 3;
+  int64 last_mated_at = 4;
+  int64 gestation_ready_at = 5;
+  bool is_fed = 6;
+}
+
+message IncubatorUpdate {
+  string id = 1;
+  string egg_type = 2;
+  int64 ready_at = 3;
+}
+
 message ServerMessage {
   oneof payload {
     AuthChallenge auth_challenge = 1;
@@ -161,5 +212,7 @@ message ServerMessage {
     PlotUpdate plot_update = 11;
     ActionSuccess action_result = 12;
     ActionError action_error = 13;
+    AnimalUpdate animal_update = 14;
+    IncubatorUpdate incubator_update = 15;
   }
 }

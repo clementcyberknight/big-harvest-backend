@@ -235,6 +235,48 @@ export function createWsServer(): void {
               send(ws, { type: 'action_result', action_type: 'collect_animal', message: `Collected! Rare dropped: ${res.rare}` });
               break;
             }
+            case 'buy_animal': {
+              const res = await AnimalEngine.buyAnimal(pid, msg.animal_type);
+              send(ws, { type: 'action_result', action_type: 'buy_animal', message: `Bought a ${msg.animal_type}` });
+              send(ws, { type: 'animal_update', id: res.id, animal_type: res.animal_type, locked_for_loan: false, last_mated_at: 0, gestation_ready_at: 0, is_fed: false });
+              send(ws, { type: 'balance_update', balance: await getPlayerBalance(pid) });
+              break;
+            }
+            case 'sell_animal': {
+              const res = await AnimalEngine.sellAnimal(pid, msg.animal_id);
+              send(ws, { type: 'action_result', action_type: 'sell_animal', message: `Sold animal for ${res.refund} tokens` });
+              send(ws, { type: 'balance_update', balance: await getPlayerBalance(pid) });
+              break;
+            }
+            case 'feed_animal': {
+              await AnimalEngine.feedAnimal(pid, msg.animal_id);
+              send(ws, { type: 'action_result', action_type: 'feed_animal', message: `Animal fed! Production doubled.` });
+              break;
+            }
+            case 'mate_animals': {
+              const res = await AnimalEngine.mateAnimals(pid, msg.sire_id, msg.dam_id);
+              send(ws, { type: 'action_result', action_type: 'mate_animals', message: res.message });
+              break;
+            }
+            case 'buy_incubator': {
+              const res = await AnimalEngine.buyIncubator(pid);
+              send(ws, { type: 'action_result', action_type: 'buy_incubator', message: 'Incubator purchased!' });
+              send(ws, { type: 'incubator_update', id: res.id, egg_type: '', ready_at: 0 });
+              send(ws, { type: 'balance_update', balance: await getPlayerBalance(pid) });
+              break;
+            }
+            case 'start_incubation': {
+              const res = await AnimalEngine.startIncubation(pid, msg.incubator_id, msg.egg_item_id);
+              send(ws, { type: 'action_result', action_type: 'start_incubation', message: `Incubation started, ready at ${res.readyAt}` });
+              send(ws, { type: 'incubator_update', id: msg.incubator_id, egg_type: msg.egg_item_id, ready_at: res.readyAt });
+              break;
+            }
+            case 'finish_incubation': {
+              const res = await AnimalEngine.finishIncubation(pid, msg.incubator_id);
+              send(ws, { type: 'action_result', action_type: 'finish_incubation', message: `Hatched a ${res.animal_type}!` });
+              send(ws, { type: 'animal_update', id: res.id, animal_type: res.animal_type, locked_for_loan: false, last_mated_at: 0, gestation_ready_at: 0, is_fed: false });
+              break;
+            }
             case 'craft': {
               const res = await CraftingEngine.startCrafting(pid, msg.recipe_id);
               send(ws, { type: 'action_result', action_type: 'craft', message: `Crafting started... ready at ${res.ready_at}` });

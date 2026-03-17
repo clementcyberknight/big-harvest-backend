@@ -30,6 +30,13 @@ export type ParsedClientMessage =
   | { type: "sell"; item_id: string; qty: number }
   | { type: "collect_animal"; animal_id: string }
   | { type: "craft"; recipe_id: string }
+  | { type: "buy_animal"; animal_type: string }
+  | { type: "sell_animal"; animal_id: string }
+  | { type: "feed_animal"; animal_id: string }
+  | { type: "mate_animals"; sire_id: string; dam_id: string }
+  | { type: "buy_incubator" }
+  | { type: "start_incubation"; incubator_id: string; egg_item_id: string }
+  | { type: "finish_incubation"; incubator_id: string }
   | { type: "request_loan"; amount: number }
   | { type: "repay_loan"; loan_id: string; amount: number };
 
@@ -68,7 +75,9 @@ export type ServerMessage =
   | { type: "loan_result"; loan_id: string; amount: number; due_at: number }
   | { type: "craft_complete"; item_id: string; quantity: number }
   | { type: "price_update"; prices: any[] }
-  | { type: "loan_default"; seized_assets: Array<{ type: string; id: string; value: number }>; remaining_debt: number };
+  | { type: "loan_default"; seized_assets: Array<{ type: string; id: string; value: number }>; remaining_debt: number }
+  | { type: "animal_update"; id: string; animal_type: string; locked_for_loan: boolean; last_mated_at: number; gestation_ready_at: number; is_fed: boolean }
+  | { type: "incubator_update"; id: string; egg_type: string; ready_at: number };
 
 function encodeVarint(value: number): Uint8Array {
   const bytes: number[] = [];
@@ -122,6 +131,13 @@ export function parseMessage(data: ArrayBuffer): ParsedClientMessage | null {
         sell?: { itemId: string, qty: number };
         collectAnimal?: { animalId: string };
         craft?: { recipeId: string };
+        buyAnimal?: { animalType: string };
+        sellAnimal?: { animalId: string };
+        feedAnimal?: { animalId: string };
+        mateAnimals?: { sireId: string, damId: string };
+        buyIncubator?: object;
+        startIncubation?: { incubatorId: string, eggItemId: string };
+        finishIncubation?: { incubatorId: string };
         requestLoan?: { amount: number };
         repayLoan?: { loanId: string; amount: number };
       };
@@ -158,6 +174,13 @@ export function parseMessage(data: ArrayBuffer): ParsedClientMessage | null {
     if (payload.sell) return { type: "sell", item_id: payload.sell.itemId, qty: payload.sell.qty };
     if (payload.collectAnimal) return { type: "collect_animal", animal_id: payload.collectAnimal.animalId };
     if (payload.craft) return { type: "craft", recipe_id: payload.craft.recipeId };
+    if (payload.buyAnimal) return { type: "buy_animal", animal_type: payload.buyAnimal.animalType };
+    if (payload.sellAnimal) return { type: "sell_animal", animal_id: payload.sellAnimal.animalId };
+    if (payload.feedAnimal) return { type: "feed_animal", animal_id: payload.feedAnimal.animalId };
+    if (payload.mateAnimals) return { type: "mate_animals", sire_id: payload.mateAnimals.sireId, dam_id: payload.mateAnimals.damId };
+    if (payload.buyIncubator) return { type: "buy_incubator" };
+    if (payload.startIncubation) return { type: "start_incubation", incubator_id: payload.startIncubation.incubatorId, egg_item_id: payload.startIncubation.eggItemId };
+    if (payload.finishIncubation) return { type: "finish_incubation", incubator_id: payload.finishIncubation.incubatorId };
     if (payload.requestLoan) return { type: "request_loan", amount: payload.requestLoan.amount };
     if (payload.repayLoan) return { type: "repay_loan", loan_id: payload.repayLoan.loanId, amount: payload.repayLoan.amount };
 
@@ -381,5 +404,18 @@ interface ProtoPayload {
       sellPrice: number;
       demandMult: number;
     }>;
+  };
+  animalUpdate?: {
+    id: string;
+    animalType: string;
+    lockedForLoan: boolean;
+    lastMatedAt: number;
+    gestationReadyAt: number;
+    isFed: boolean;
+  };
+  incubatorUpdate?: {
+    id: string;
+    eggType: string;
+    readyAt: number;
   };
 }

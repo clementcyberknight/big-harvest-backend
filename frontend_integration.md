@@ -116,14 +116,36 @@ Plots come in three tiers: `starter`, `fertile`, and `premium`.
 
 ---
 
-## 4. Animals & Crafting
+## 4. Animals & Husbandry
 
-### Collecting from Animals
-Animals operate on a 10-minute real-world cycle. They have a chance to drop rare items (e.g., a Golden Egg instead of a normal Egg).
-* **Client:** `{ type: "collect_animal", animal_id: "uuid-..." }`
-* **Success:** `{ type: "action_result", ... }` + inventory update.
+### Buying & Selling Animals
+Animals have dynamic prices based on the global economy. 
+* **Buy:** `{ type: "buy_animal", animal_type: "chicken" }`
+* **Success:** `{ type: "action_result", ... }` + `{ type: "animal_update", ... }` + `balance_update`
+* **Sell:** `{ type: "sell_animal", animal_id: "uuid-..." }`
+* **Success:** Refunds 50% purchase price + `balance_update`
 
-### Crafting
+### Feeding & Collecting
+Animals operate on a 10-minute real-world cycle. Collecting requires them to be ready. Feeding an animal consumes 1 `animal_feed` from inventory, but it **doubles** their next output and increases the rare drop chance by 1.5x.
+* **Feed:** `{ type: "feed_animal", animal_id: "uuid-..." }`
+* **Collect:** `{ type: "collect_animal", animal_id: "uuid-..." }`
+* **Success:** `{ type: "action_result", message: "Collected! Rare dropped: true" }` + inventory updates.
+
+### Mating & Reproduction
+Animals of the same species can be mated. Mating has a 2-hour cooldown.
+* **Client:** `{ type: "mate_animals", sire_id: "uuid-1", dam_id: "uuid-2" }`
+* **Birds (e.g. chicken):** Drops a `fertilized_egg_chicken` into your inventory.
+* **Mammals (e.g. cow):** Starts a 1-hour gestation period on the mother (`gestation_ready_at` sent in `animal_update`).
+
+### Incubators
+To hatch a `fertilized_egg`, players must buy an Incubator machine.
+* **Buy Machine:** `{ type: "buy_incubator" }` 
+* **Start Hatching:** `{ type: "start_incubation", incubator_id: "uuid-...", egg_item_id: "chicken" }`
+* **Finish Hatching:** `{ type: "finish_incubation", incubator_id: "uuid-..." }` (After 30 minutes, drops a new live animal).
+
+---
+
+## 5. Crafting
 Crafting takes real-world time (15s to 10m based on tier) and happens on the server.
 * **Client:** `{ type: "craft", recipe_id: "bread" }`
 * **Server Acknowledges:** `{ type: "action_result", action_type: "craft", message: "... ready at 1710600500" }`

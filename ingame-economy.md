@@ -261,11 +261,21 @@ Server:
   6. Reply: { type: "craft_result", item: "bread", ready_at: timestamp }
 ```
 
-### 4.6 Rare Animal Produce
+### 4.6 Animal Husbandry & Produce
 
-Some animals have a **rare drop** alongside their normal produce:
+Players can buy, sell, feed, mate, and incubate animals.
 
-| Animal | Normal Produce | Rare Produce | Rare Drop Rate |
+**Buying & Selling:** Animals are purchased using dynamic prices tied to the Treasury ratio (similar to plots). They can be sold back for 50% of their current market or purchase value, provided they are not locked as loan collateral.
+
+**Feeding:** Feeding an animal consumes 1 `animal_feed` from inventory. A fed animal produces **double yield** and its rare drop chance is increased by **1.5x**.
+
+**Mating & Reproduction:** Animals of the same species can be mated, triggering a 2-hour cooldown.
+- **Birds (e.g. Chicken):** Mating drops a `fertilized_egg_chicken`. The player must deposit this into an **Incubator** (purchased machine) for 30 minutes to hatch a live animal.
+- **Mammals (e.g. Cow):** Mating triggers an active 1-hour gestation period directly on the mother. After the timer ends, a new animal is born.
+
+**Collecting Production:** Animals act on a 10-minute real-world cycle. Some animals have a **rare drop** alongside their normal produce:
+
+| Animal | Normal Produce | Rare Produce | Base Rare Rate |
 |--------|---------------|-------------|----------------|
 | Chicken | Egg | Golden Egg | 5% per cycle |
 | Cow | Milk | Rich Milk | 8% per cycle |
@@ -277,11 +287,12 @@ Some animals have a **rare drop** alongside their normal produce:
 Client: { type: "collect_animal", animal_id: "uuid" }
 Server:
   1. Verify ownership, check isProductionReady()
-  2. Roll RNG for rare drop
-  3. Add normal produce + rare (if rolled) to inventory
-  4. Reset last_collected timestamp
-  5. Award XP
-  6. Reply: { type: "collect_result", items: [...], rare: true/false }
+  2. Check if is_fed is true. If so, multiply rare drop chance by 1.5x and double normal drop yields.
+  3. Roll RNG for rare drop.
+  4. Add normal produce + rare (if rolled) to inventory.
+  5. Reset last_collected timestamp and clear the is_fed flag.
+  6. Award XP.
+  7. Reply: { type: "collect_result", items: [...], rare: true/false }
 ```
 
 ---
@@ -517,6 +528,13 @@ Add `coins BIGINT DEFAULT 0` (start at 0; the dynamic sign-up bonus is a ledger 
 | `harvest` | `{ plot_id }` | Harvest a ready crop |
 | `sell` | `{ item_id, qty }` | Sell produce to Treasury |
 | `buy_seed` | `{ crop_id, qty }` | Buy seeds from Treasury |
+| `buy_animal` | `{ animal_type }` | Buy a new animal at dynamic market cost |
+| `sell_animal` | `{ animal_id }` | Sell an animal back to Treasury |
+| `feed_animal` | `{ animal_id }` | Consume 1 animal_feed to boost yield |
+| `mate_animals` | `{ sire_id, dam_id }` | Mate two animals of the same species |
+| `buy_incubator` | `{}` | Buy a new incubator machine |
+| `start_incubation` | `{ incubator_id, egg_item_id }` | Deposit a fertilized egg to start hatching |
+| `finish_incubation` | `{ incubator_id }` | Claim a hatched animal from the incubator |
 | `request_loan` | `{ amount }` | Request a loan |
 | `repay_loan` | `{ loan_id, amount }` | Repay a loan |
 | `collect_animal` | `{ animal_id }` | Collect animal produce |
@@ -532,6 +550,8 @@ Add `coins BIGINT DEFAULT 0` (start at 0; the dynamic sign-up bonus is a ledger 
 | `harvest_result` | `{ items[], xp, balance }` | Harvest results with yield |
 | `sell_result` | `{ earned, balance }` | Sale confirmation |
 | `buy_result` | `{ success, balance, inventory }` | Seed purchase result |
+| `animal_update` | `{ id, animal_type, is_fed, gestation_ready_at }` | Real-time status update for an animal |
+| `incubator_update`| `{ id, egg_type, ready_at }` | Real-time status update for an incubator |
 | `craft_result` | `{ item, ready_at }` | Crafting started confirmation |
 | `craft_complete` | `{ item, qty }` | Crafting finished |
 | `collect_result` | `{ items[], rare }` | Animal produce collected |

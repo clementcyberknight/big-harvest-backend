@@ -220,6 +220,28 @@ export class PricingEngine {
     return Math.max(1, Math.floor(base * treasuryMult));
   }
 
+  static async getAnimalPrice(animalType: string): Promise<number> {
+    const bases: Record<string, number> = { chicken: 100, bee: 100, sheep: 300, pig: 300, cow: 800 };
+    const base = bases[animalType] || 200;
+    
+    const treasuryRatio = await Treasury.getRatio();
+    let treasuryMult = 1.0;
+    if (treasuryRatio < 0.25) treasuryMult = 1.5;
+    if (treasuryRatio > 0.75) treasuryMult = 0.7;
+
+    return Math.max(1, Math.floor(base * treasuryMult));
+  }
+
+  static async getIncubatorPrice(): Promise<number> {
+    const base = 1500;
+    const treasuryRatio = await Treasury.getRatio();
+    let treasuryMult = 1.0;
+    if (treasuryRatio < 0.25) treasuryMult = 1.5;
+    if (treasuryRatio > 0.75) treasuryMult = 0.7;
+
+    return Math.max(1, Math.floor(base * treasuryMult));
+  }
+
   /**
    * Analytics: take a snapshot of all prices and multipliers every 5 minutes.
    */
