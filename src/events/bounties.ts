@@ -47,7 +47,7 @@ export class BountyEngine {
     const targetQtyStr = await redis.get('bounty:target_qty');
 
     const newCurrent = await redis.incrBy('bounty:current_qty', qty);
-    await (redis as any).zincrby('bounty:contributors', qty, profileId);
+    await redis.zIncrBy('bounty:contributors', qty, profileId);
 
     const targetQty = parseInt(targetQtyStr || '0', 10);
 
@@ -68,14 +68,9 @@ export class BountyEngine {
     const targetQty = parseInt(targetQtyStr || '0', 10);
     const totalPool = targetQty * 5;
 
-    // We can't use ZRANGE WITHSCORES directly without specific types, let's just get the raw array
-    // ioredis returns flat array ['profileA', '100', 'profileB', '200']
-    const contributors = await (redis as any).zrange('bounty:contributors', 0, -1, 'WITHSCORES');
+    const contributors = await redis.zRangeWithScores('bounty:contributors', 0, -1);
 
-    for (let i = 0; i < contributors.length; i += 2) {
-      const profileId = contributors[i];
-      const contribution = parseInt(contributors[i+1], 10);
-      
+    for (const { value: profileId, score: contribution } of contributors) {
       const share = contribution / targetQty;
       const reward = Math.floor(totalPool * share);
 
