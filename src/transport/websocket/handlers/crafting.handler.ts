@@ -1,6 +1,7 @@
 import type { WebSocket } from "uWebSockets.js";
 import { logger } from "../../../infrastructure/logger/logger.js";
 import type { CraftingService } from "../../../modules/crafting/crafting.service.js";
+import type { UserActionService } from "../../../modules/user-actions/userAction.service.js";
 import { AppError } from "../../../shared/errors/appError.js";
 import { wsActionLimiter } from "../ws.rateLimiter.js";
 import type { WsOutboundMessage, WsUserData } from "../ws.types.js";
@@ -13,6 +14,7 @@ export async function handleCraftStart(
   ws: WebSocket<WsUserData>,
   payload: unknown,
   crafting: CraftingService,
+  userActions: UserActionService,
 ): Promise<void> {
   const userId = ws.getUserData().userId;
   try {
@@ -23,6 +25,7 @@ export async function handleCraftStart(
   }
   try {
     const data = await crafting.start(userId, payload);
+    void userActions.log(userId, "CRAFT_START", payload);
     send(ws, { type: "CRAFT_START_OK", data });
   } catch (e) {
     if (e instanceof AppError) {
@@ -44,6 +47,7 @@ export async function handleCraftClaim(
   ws: WebSocket<WsUserData>,
   payload: unknown,
   crafting: CraftingService,
+  userActions: UserActionService,
 ): Promise<void> {
   const userId = ws.getUserData().userId;
   try {
@@ -54,6 +58,7 @@ export async function handleCraftClaim(
   }
   try {
     const data = await crafting.claim(userId, payload);
+    void userActions.log(userId, "CRAFT_CLAIM", payload);
     send(ws, { type: "CRAFT_CLAIM_OK", data });
   } catch (e) {
     if (e instanceof AppError) {

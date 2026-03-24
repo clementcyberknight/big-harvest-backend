@@ -1,6 +1,7 @@
 import type { WebSocket } from "uWebSockets.js";
 import { logger } from "../../../infrastructure/logger/logger.js";
 import type { HarvestingService } from "../../../modules/harvesting/harvesting.service.js";
+import type { UserActionService } from "../../../modules/user-actions/userAction.service.js";
 import { AppError } from "../../../shared/errors/appError.js";
 import { wsActionLimiter } from "../ws.rateLimiter.js";
 import type { WsOutboundMessage, WsUserData } from "../ws.types.js";
@@ -13,6 +14,7 @@ export async function handleHarvest(
   ws: WebSocket<WsUserData>,
   payload: unknown,
   harvesting: HarvestingService,
+  userActions: UserActionService,
 ): Promise<void> {
   const userId = ws.getUserData().userId;
   try {
@@ -28,6 +30,7 @@ export async function handleHarvest(
 
   try {
     const data = await harvesting.harvest(userId, payload);
+    void userActions.log(userId, "HARVEST", payload);
     send(ws, { type: "HARVEST_OK", data });
   } catch (e) {
     if (e instanceof AppError) {

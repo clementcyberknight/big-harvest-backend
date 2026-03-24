@@ -1,24 +1,69 @@
 import { App, DISABLED } from "uWebSockets.js";
 import type { WebSocket } from "uWebSockets.js";
+import { env } from "../../config/env.js";
 import { logger } from "../../infrastructure/logger/logger.js";
+import { verifyAccessToken } from "../../modules/auth/jwt.js";
+import {
+  registerAuthHttp,
+  type AuthHttpDeps,
+} from "../http/registerAuthHttp.js";
 import { dispatchWsMessage, type WsGameContext } from "./ws.router.js";
 import type { WsUserData } from "./ws.types.js";
 
 export type ListenToken = unknown;
 
-export function createWsApp(ctx: WsGameContext) {
+export type WsAppContext = WsGameContext & AuthHttpDeps;
+
+export function createWsApp(ctx: WsAppContext) {
+  const app = App();
+
+  registerAuthHttp(app, {
+    auth: ctx.auth,
+    profile: ctx.profile,
+    userActions: ctx.userActions,
+  });
+
   return (
-    App()
+    app
       .ws<WsUserData>("/*", {
         compression: DISABLED,
         idleTimeout: 120,
         maxPayloadLength: 16 * 1024,
         upgrade(res, req, context) {
-          const userId = req.getQuery("userId") ?? "";
-          if (!userId) {
-            res.writeStatus("401 Unauthorized").end("userId query required");
-            return;
+          let userId: string;
+
+          if (env.AUTH_DEV_BYPASS) {
+            const q = req.getQuery("userId") ?? "";
+            if (!q) {
+              res
+                .writeStatus("401 Unauthorized")
+                .end("userId query required when AUTH_DEV_BYPASS=true");
+              return;
+            }
+            userId = q;
+          } else {
+            const header = req.getHeader("authorization");
+            let token = "";
+            if (header?.toLowerCase().startsWith("bearer ")) {
+              token = header.slice(7).trim();
+            }
+            if (!token) {
+              token = (req.getQuery("token") ?? "").trim();
+            }
+            if (!token) {
+              res
+                .writeStatus("401 Unauthorized")
+                .end("JWT required: Authorization: Bearer <token> or ?token=");
+              return;
+            }
+            const payload = verifyAccessToken(token);
+            if (!payload) {
+              res.writeStatus("401 Unauthorized").end("Invalid or expired token");
+              return;
+            }
+            userId = payload.sub;
           }
+
           res.upgrade(
             { userId },
             req.getHeader("sec-websocket-key"),
@@ -28,7 +73,7 @@ export function createWsApp(ctx: WsGameContext) {
           );
         },
         open(_ws: WebSocket<WsUserData>) {
-          /* userId already set in upgrade */
+          /* userId set in upgrade */
         },
         message(ws, message, _isBinary) {
           const text = Buffer.from(message).toString("utf8");
@@ -51,9 +96,6 @@ export function createWsApp(ctx: WsGameContext) {
         close(ws, code, _reason) {
           logger.debug({ userId: ws.getUserData().userId, code }, "ws closed");
         },
-      })
-      .get("/health", (res) => {
-        res.writeStatus("200 OK").end("ok");
       })
   );
 }

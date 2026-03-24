@@ -1,6 +1,7 @@
 import type { WebSocket } from "uWebSockets.js";
 import { logger } from "../../../infrastructure/logger/logger.js";
 import type { LoanService } from "../../../modules/loan/loan.service.js";
+import type { UserActionService } from "../../../modules/user-actions/userAction.service.js";
 import { AppError } from "../../../shared/errors/appError.js";
 import { wsActionLimiter } from "../ws.rateLimiter.js";
 import type { WsOutboundMessage, WsUserData } from "../ws.types.js";
@@ -13,6 +14,7 @@ export async function handleLoanOpen(
   ws: WebSocket<WsUserData>,
   payload: unknown,
   loan: LoanService,
+  userActions: UserActionService,
 ): Promise<void> {
   const userId = ws.getUserData().userId;
   try {
@@ -23,6 +25,7 @@ export async function handleLoanOpen(
   }
   try {
     const data = await loan.open(userId, payload);
+    void userActions.log(userId, "LOAN_OPEN", payload);
     send(ws, { type: "LOAN_OPEN_OK", data });
   } catch (e) {
     if (e instanceof AppError) {
@@ -44,6 +47,7 @@ export async function handleLoanRepay(
   ws: WebSocket<WsUserData>,
   payload: unknown,
   loan: LoanService,
+  userActions: UserActionService,
 ): Promise<void> {
   const userId = ws.getUserData().userId;
   try {
@@ -54,6 +58,7 @@ export async function handleLoanRepay(
   }
   try {
     const data = await loan.repay(userId, payload);
+    void userActions.log(userId, "LOAN_REPAY", payload);
     send(ws, { type: "LOAN_REPAY_OK", data });
   } catch (e) {
     if (e instanceof AppError) {

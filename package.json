@@ -17,8 +17,10 @@
   "author": "clement",
   "license": "ISC",
   "dependencies": {
+    "@solana/web3.js": "^1.98.4",
     "@supabase/supabase-js": "^2.100.0",
     "bcrypt": "^6.0.0",
+    "bs58": "^6.0.0",
     "bullmq": "^5.71.0",
     "dotenv": "^17.3.1",
     "ioredis": "^5.10.1",
@@ -31,11 +33,14 @@
     "protobufjs": "^8.0.0",
     "rate-limiter-flexible": "^10.0.1",
     "simple-statistics": "^7.8.9",
+    "tweetnacl": "^1.0.3",
     "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.59.0",
+    "unique-username-generator": "^1.5.1",
     "uuid": "^13.0.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.5.0",
     "eslint": "^10.1.0",
     "prettier": "^3.8.1",

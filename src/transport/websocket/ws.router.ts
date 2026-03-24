@@ -6,6 +6,7 @@ import type { HarvestingService } from "../../modules/harvesting/harvesting.serv
 import type { LoanService } from "../../modules/loan/loan.service.js";
 import type { MarketService } from "../../modules/market/market.service.js";
 import type { PlantingService } from "../../modules/planting/planting.service.js";
+import type { UserActionService } from "../../modules/user-actions/userAction.service.js";
 import {
   handleAnimalFeed,
   handleAnimalHarvest,
@@ -29,6 +30,7 @@ export type WsGameContext = {
   loan: LoanService;
   animals: AnimalService;
   crafting: CraftingService;
+  userActions: UserActionService;
 };
 
 function send(ws: WebSocket<WsUserData>, msg: WsOutboundMessage): void {
@@ -85,34 +87,34 @@ export async function dispatchWsMessage(
       send(ws, { type: "PONG" });
       return;
     case "PLANT":
-      await handlePlant(ws, msg.payload, ctx.planting);
+      await handlePlant(ws, msg.payload, ctx.planting, ctx.userActions);
       return;
     case "HARVEST":
-      await handleHarvest(ws, msg.payload, ctx.harvesting);
+      await handleHarvest(ws, msg.payload, ctx.harvesting, ctx.userActions);
       return;
     case "SELL":
-      await handleSell(ws, msg.payload, ctx.market);
+      await handleSell(ws, msg.payload, ctx.market, ctx.userActions);
       return;
     case "BUY":
-      await handleBuy(ws, msg.payload, ctx.market);
+      await handleBuy(ws, msg.payload, ctx.market, ctx.userActions);
       return;
     case "LOAN_OPEN":
-      await handleLoanOpen(ws, msg.payload, ctx.loan);
+      await handleLoanOpen(ws, msg.payload, ctx.loan, ctx.userActions);
       return;
     case "LOAN_REPAY":
-      await handleLoanRepay(ws, msg.payload, ctx.loan);
+      await handleLoanRepay(ws, msg.payload, ctx.loan, ctx.userActions);
       return;
     case "ANIMAL_FEED":
-      await handleAnimalFeed(ws, msg.payload, ctx.animals);
+      await handleAnimalFeed(ws, msg.payload, ctx.animals, ctx.userActions);
       return;
     case "ANIMAL_HARVEST":
-      await handleAnimalHarvest(ws, msg.payload, ctx.animals);
+      await handleAnimalHarvest(ws, msg.payload, ctx.animals, ctx.userActions);
       return;
     case "CRAFT_START":
-      await handleCraftStart(ws, msg.payload, ctx.crafting);
+      await handleCraftStart(ws, msg.payload, ctx.crafting, ctx.userActions);
       return;
     case "CRAFT_CLAIM":
-      await handleCraftClaim(ws, msg.payload, ctx.crafting);
+      await handleCraftClaim(ws, msg.payload, ctx.crafting, ctx.userActions);
       return;
     default:
       logger.warn({ msg }, "unhandled ws message type");

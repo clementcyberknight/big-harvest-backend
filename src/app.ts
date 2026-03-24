@@ -4,19 +4,26 @@ import { getRedis } from "./infrastructure/redis/client.js";
 import { loadRedisScripts } from "./infrastructure/redis/commands.js";
 import { treasuryReserveKey } from "./infrastructure/redis/keys.js";
 import { logger } from "./infrastructure/logger/logger.js";
+import { AuthService } from "./modules/auth/auth.service.js";
 import { AnimalService } from "./modules/animal/animal.service.js";
 import { CraftingService } from "./modules/crafting/crafting.service.js";
 import { HarvestingService } from "./modules/harvesting/harvesting.service.js";
 import { LoanService } from "./modules/loan/loan.service.js";
 import { MarketService } from "./modules/market/market.service.js";
 import { PlantingService } from "./modules/planting/planting.service.js";
-import type { WsGameContext } from "./transport/websocket/ws.router.js";
-import { createWsApp, listenGameWs, type ListenToken } from "./transport/websocket/ws.server.js";
+import { ProfileService } from "./modules/profile/profile.service.js";
+import { UserActionService } from "./modules/user-actions/userAction.service.js";
+import {
+  createWsApp,
+  listenGameWs,
+  type ListenToken,
+  type WsAppContext,
+} from "./transport/websocket/ws.server.js";
 import { runPricingTick, startPricingLoop } from "./workers/pricing.worker.js";
 import { us_listen_socket_close } from "uWebSockets.js";
 
 export type AppInstance = {
-  ctx: WsGameContext;
+  ctx: WsAppContext;
   listenToken: ListenToken;
   close: () => void;
 };
@@ -34,13 +41,20 @@ export async function startApp(): Promise<AppInstance> {
   const loan = new LoanService(redis);
   const animals = new AnimalService(redis);
   const crafting = new CraftingService(redis);
-  const ctx: WsGameContext = {
+  const profile = new ProfileService();
+  const auth = new AuthService(redis, profile);
+  const userActions = new UserActionService();
+
+  const ctx: WsAppContext = {
     planting: new PlantingService(redis),
     harvesting: new HarvestingService(redis),
     market,
     loan,
     animals,
     crafting,
+    userActions,
+    auth,
+    profile,
   };
 
   const uws = createWsApp(ctx);

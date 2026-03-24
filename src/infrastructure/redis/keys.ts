@@ -125,3 +125,8 @@ export function treasuryTradesStreamKey(): string {
 export function treasuryPriceHistoryKey(itemId: string): string {
   return `ravolo:${TREASURY_HASH_TAG}:ph:${itemId}`;
 }
+
+/** One-time Solana auth challenge message (UTF-8 string), keyed by challenge id. */
+export function authChallengeKey(challengeId: string): string {
+  return `ravolo:auth:challenge:${challengeId}`;
+}
