@@ -20,12 +20,19 @@ import {
   type WsAppContext,
 } from "./transport/websocket/ws.server.js";
 import { runPricingTick, startPricingLoop } from "./workers/pricing.worker.js";
+import {
+  flushUserActionsQueueToSupabase,
+  startUserActionsFlushWorker,
+} from "./workers/userActionsFlush.worker.js";
 import { us_listen_socket_close } from "uWebSockets.js";
 
 export type AppInstance = {
   ctx: WsAppContext;
   listenToken: ListenToken;
+  /** Sync teardown (listeners, uWS). Prefer {@link disposeAsync} for clean shutdown. */
   close: () => void;
+  /** Stops background workers, closes sockets; then caller should flush user_actions and close Redis. */
+  disposeAsync: () => Promise<void>;
 };
 
 export async function startApp(): Promise<AppInstance> {
@@ -43,7 +50,8 @@ export async function startApp(): Promise<AppInstance> {
   const crafting = new CraftingService(redis);
   const profile = new ProfileService();
   const auth = new AuthService(redis, profile);
-  const userActions = new UserActionService();
+  const userActions = new UserActionService(redis);
+  const stopUserActionsWorker = startUserActionsFlushWorker(redis);
 
   const ctx: WsAppContext = {
     planting: new PlantingService(redis),
@@ -68,6 +76,13 @@ export async function startApp(): Promise<AppInstance> {
       stopPricing();
       us_listen_socket_close(listenToken as never);
       uws.close();
+    },
+    disposeAsync: async () => {
+      stopPricing();
+      await stopUserActionsWorker();
+      us_listen_socket_close(listenToken as never);
+      uws.close();
+      await flushUserActionsQueueToSupabase(redis);
     },
   };
 }

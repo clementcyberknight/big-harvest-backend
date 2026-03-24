@@ -164,6 +164,17 @@ src/
 - **Never trust client timestamps** for gameplay or economy. Use **server time only** (`Date.now()` / monotonic clocks where appropriate).
 - **Redis** is the **source of truth for concurrent game state** during play (plots, cooldowns, locks, idempotency).
 - **Postgres (or Supabase)** is **durable truth** for profiles, audit, anti-cheat review, and recovery. Design **explicit sync**: Redis success → enqueue durable write → retry on failure (BullMQ), with state markers (`pending` / `confirmed`) where mismatch is unacceptable.
+- **`user_actions` (implemented)** — Hot path is **only** `RPUSH` to Redis list `ravolo:user_actions:queue`. `src/workers/userActionsFlush.worker.ts` batch-drains with **`MULTI` `LRANGE` + `LTRIM`** (atomic), then bulk-inserts to Supabase; failed batches are re-queued at the head. Use `app.disposeAsync()` on shutdown so the worker finishes and a final drain runs before Redis closes.
+
+---
+
+## Hot path vs cold path (performance)
+
+- **WebSocket gameplay** should not `await` HTTP to Supabase (or other remote APIs). Keep mutations in **Redis/Lua**; push analytics/audit through **Redis queues** or **BullMQ** and flush in workers.
+- **`/auth/*` and `/profile/*`** are **cold path**: a few Supabase round-trips per signup/login is acceptable; they are not on the per-tick game loop.
+- **Pricing worker** (`pricing.worker.ts`) does more Redis reads per tick (flows + history per item). If tick cost grows, move heavy stats to a slower cadence or sample.
+- **`jsonwebtoken` verify** on WebSocket upgrade is local crypto only — cheap vs network I/O.
+- **Per-action `JSON.stringify`** for audit payloads is CPU-only; keep payloads small. Oversized lines are truncated using `USER_ACTIONS_MAX_LINE_BYTES`.
 
 ---
 

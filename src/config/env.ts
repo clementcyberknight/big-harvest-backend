@@ -18,6 +18,12 @@ const schema = z.object({
     .string()
     .optional()
     .transform((v) => v === "true"),
+  /** Max rows drained per worker tick (MULTI LRANGE+LTRIM). */
+  USER_ACTIONS_BATCH_SIZE: z.coerce.number().int().positive().max(500).default(200),
+  /** Sleep when queue empty before polling again. */
+  USER_ACTIONS_POLL_MS: z.coerce.number().int().nonnegative().default(200),
+  /** Drop oversized queue entries on enqueue (bytes UTF-8). */
+  USER_ACTIONS_MAX_LINE_BYTES: z.coerce.number().int().positive().default(65536),
 });
 
 export type Env = z.infer<typeof schema>;
@@ -32,4 +38,7 @@ export const env: Env = schema.parse({
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN,
   AUTH_CHALLENGE_TTL_SEC: process.env.AUTH_CHALLENGE_TTL_SEC,
   AUTH_DEV_BYPASS: process.env.AUTH_DEV_BYPASS,
+  USER_ACTIONS_BATCH_SIZE: process.env.USER_ACTIONS_BATCH_SIZE,
+  USER_ACTIONS_POLL_MS: process.env.USER_ACTIONS_POLL_MS,
+  USER_ACTIONS_MAX_LINE_BYTES: process.env.USER_ACTIONS_MAX_LINE_BYTES,
 });

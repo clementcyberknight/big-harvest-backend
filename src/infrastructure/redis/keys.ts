@@ -130,3 +130,8 @@ export function treasuryPriceHistoryKey(itemId: string): string {
 export function authChallengeKey(challengeId: string): string {
   return `ravolo:auth:challenge:${challengeId}`;
 }
+
+/** LIST of JSON lines; worker batches to Supabase (hot path only RPUSH). */
+export function userActionsQueueKey(): string {
+  return "ravolo:user_actions:queue";
+}

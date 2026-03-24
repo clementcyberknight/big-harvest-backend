@@ -8,9 +8,14 @@ logger.info("Ravolo game server ready");
 async function shutdown(signal: string) {
   logger.info({ signal }, "shutting down");
   try {
-    app.close();
+    await app.disposeAsync();
   } catch (e) {
-    logger.warn({ err: e }, "app.close failed");
+    logger.warn({ err: e }, "app.disposeAsync failed");
+    try {
+      app.close();
+    } catch (e2) {
+      logger.warn({ err: e2 }, "app.close failed");
+    }
   }
   await closeRedis();
   process.exit(0);
