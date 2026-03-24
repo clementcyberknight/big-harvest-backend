@@ -1,19 +1,18 @@
-/**
- * Environment configuration.
- * Uses dotenv (standard for Node.js) - loads .env from project root.
- */
-
 import "dotenv/config";
+import { z } from "zod";
 
-const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY ?? "";
+const schema = z.object({
+  NODE_ENV: z
+    .enum(["development", "test", "production"])
+    .default("development"),
+  REDIS_URL: z.string().min(1, "REDIS_URL is required"),
+  WS_PORT: z.coerce.number().int().positive().default(9001),
+});
 
-export const env = {
-  supabaseUrl: process.env.SUPABASE_URL ?? "",
-  supabaseSecretKey,
-  jwtSecret: process.env.JWT_SECRET ?? "change-me-in-production",
-  port: Number(process.env.PORT) || 3001,
-  nodeEnv: process.env.NODE_ENV ?? "development",
-  rapidApiKey: process.env.RAPIDAPI_KEY ?? "",
-  googleAiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? "",
-  redisUrl: process.env.REDIS_URL ?? "",
-} as const;
+export type Env = z.infer<typeof schema>;
+
+export const env: Env = schema.parse({
+  NODE_ENV: process.env.NODE_ENV,
+  REDIS_URL: process.env.REDIS_URL,
+  WS_PORT: process.env.WS_PORT,
+});
