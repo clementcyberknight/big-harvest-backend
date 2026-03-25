@@ -21,6 +21,7 @@ import {
   type WsAppContext,
 } from "./transport/websocket/ws.server.js";
 import { runPricingTick, startPricingLoop } from "./workers/pricing.worker.js";
+import { startIdolRequestLoop } from "./workers/idolRequest.worker.js";
 import {
   flushUserActionsQueueToSupabase,
   startUserActionsFlushWorker,
@@ -44,6 +45,7 @@ export async function startApp(): Promise<AppInstance> {
   await loadRedisScripts(redis);
   await runPricingTick(redis);
   const stopPricing = startPricingLoop(redis);
+  const stopIdol = startIdolRequestLoop(redis);
 
   const market = new MarketService(redis);
   const loan = new LoanService(redis);
@@ -77,11 +79,13 @@ export async function startApp(): Promise<AppInstance> {
     listenToken,
     close: () => {
       stopPricing();
+      stopIdol();
       us_listen_socket_close(listenToken as never);
       uws.close();
     },
     disposeAsync: async () => {
       stopPricing();
+      stopIdol();
       await stopUserActionsWorker();
       us_listen_socket_close(listenToken as never);
       uws.close();

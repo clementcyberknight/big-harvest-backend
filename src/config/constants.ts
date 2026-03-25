@@ -30,3 +30,21 @@ export const PRICE_VOLATILITY_CLAMP: [number, number] = [0.85, 1.35];
 
 /** Proxy “total supply” used in scarcity term (tunable macro constant). */
 export const SCARCITY_TOTAL_UNITS = 1_000_000;
+
+/** Maximum members per syndicate. */
+export const MAX_SYNDICATE_MEMBERS = 25;
+
+/** Idol request scheduler tick interval (ms). Every 5 minutes. */
+export const IDOL_TICK_MS = 5 * 60 * 1000;
+
+/** Idol request duration (ms). 7 days to fulfill. */
+export const IDOL_REQUEST_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Duration of idol blessing (ms). 7 days. */
+export const IDOL_BLESS_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Duration of idol punishment (ms). 7 days. */
+export const IDOL_PUNISH_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Gold penalty deducted from syndicate bank on idol failure. */
+export const IDOL_PUNISH_GOLD = 500;

@@ -13,6 +13,7 @@
 -- 2 targetUserId
 -- 3 nowMs
 -- 4 idempTtlSec
+-- 5 maxMembers
 
 local existing = redis.call('GET', KEYS[7])
 if existing then
@@ -43,6 +44,13 @@ if targetSid and targetSid ~= '' then
   return redis.error_reply('ERR_TARGET_ALREADY_IN_SYNDICATE')
 end
 
+-- Check member cap before accepting
+local maxMembers = tonumber(ARGV[5]) or 50
+local count = tonumber(redis.call('SCARD', KEYS[4])) or 0
+if count >= maxMembers then
+  return redis.error_reply('ERR_SYNDICATE_FULL')
+end
+
 redis.call('SREM', KEYS[3], ARGV[2])
 redis.call('SADD', KEYS[4], ARGV[2])
 redis.call('HSET', KEYS[5], ARGV[2], 'member')
@@ -51,4 +59,3 @@ redis.call('SET', KEYS[6], metaId)
 local reply = 'OK'
 redis.call('SET', KEYS[7], reply, 'EX', tonumber(ARGV[4]) or 60)
 return reply
-

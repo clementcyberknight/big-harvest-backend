@@ -245,3 +245,62 @@ export async function handleDisbandSyndicate(
   }
 }
 
+export async function handleViewSyndicateMember(
+  ws: WebSocket<WsUserData>,
+  payload: unknown,
+  syndicates: SyndicateService,
+): Promise<void> {
+  const userId = ws.getUserData().userId;
+  if (!(await consume(userId, ws))) return;
+  try {
+    const data = await syndicates.viewMembers(userId, payload);
+    send(ws, { type: "VIEW_SYNDICATE_MEMBER_OK", data } satisfies WsOutboundMessage);
+  } catch (e) {
+    handleErr(ws, userId, e, "view syndicate member failed");
+  }
+}
+
+export async function handleViewGoldBank(
+  ws: WebSocket<WsUserData>,
+  payload: unknown,
+  syndicates: SyndicateService,
+): Promise<void> {
+  const userId = ws.getUserData().userId;
+  if (!(await consume(userId, ws))) return;
+  try {
+    const data = await syndicates.viewGoldBank(userId, payload);
+    send(ws, { type: "VIEW_GOLD_BANK_OK", data } satisfies WsOutboundMessage);
+  } catch (e) {
+    handleErr(ws, userId, e, "view gold bank failed");
+  }
+}
+
+export async function handleViewCommodityBank(
+  ws: WebSocket<WsUserData>,
+  payload: unknown,
+  syndicates: SyndicateService,
+): Promise<void> {
+  const userId = ws.getUserData().userId;
+  if (!(await consume(userId, ws))) return;
+  try {
+    const data = await syndicates.viewCommodityBank(userId, payload);
+    send(ws, { type: "VIEW_COMMODITY_BANK_OK", data } satisfies WsOutboundMessage);
+  } catch (e) {
+    handleErr(ws, userId, e, "view commodity bank failed");
+  }
+}
+
+export async function handleViewMemberContribution(
+  ws: WebSocket<WsUserData>,
+  payload: unknown,
+  syndicates: SyndicateService,
+): Promise<void> {
+  const userId = ws.getUserData().userId;
+  if (!(await consume(userId, ws))) return;
+  try {
+    const data = await syndicates.viewMemberContribution(userId, payload);
+    send(ws, { type: "VIEW_MEMBER_CONTRIBUTION_OK", data } satisfies WsOutboundMessage);
+  } catch (e) {
+    handleErr(ws, userId, e, "view member contribution failed");
+  }
+}

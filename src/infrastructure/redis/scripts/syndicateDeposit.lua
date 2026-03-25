@@ -8,6 +8,7 @@
 -- 6 contribGoldKey (HASH userId -> qty)
 -- 7 contribItemsKey (HASH "userId|itemId" -> qty)
 -- 8 idempKey
+-- 9 holdingsKey (HASH item -> qty, for monopoly tracking)
 --
 -- ARGV:
 -- 1 userId
@@ -53,9 +54,10 @@ else
   redis.call('HINCRBY', KEYS[3], item, -amt)
   redis.call('HINCRBY', KEYS[5], item, amt)
   redis.call('HINCRBY', KEYS[7], ARGV[1] .. '|' .. item, amt)
+  -- Track holdings for monopoly detection
+  redis.call('HINCRBY', KEYS[9], item, amt)
 end
 
 local reply = 'OK'
 redis.call('SET', KEYS[8], reply, 'EX', tonumber(ARGV[7]) or 60)
 return reply
-

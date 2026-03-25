@@ -25,6 +25,10 @@ export type WsInboundMessage =
   | { type: "SYNDICATE_CHAT_LIST"; payload: unknown }
   | { type: "LEAVE_SYNDICATE"; payload: unknown }
   | { type: "DISBAND_SYNDICATE"; payload: unknown }
+  | { type: "VIEW_SYNDICATE_MEMBER"; payload: unknown }
+  | { type: "VIEW_GOLD_BANK"; payload: unknown }
+  | { type: "VIEW_COMMODITY_BANK"; payload: unknown }
+  | { type: "VIEW_MEMBER_CONTRIBUTION"; payload: unknown }
   | { type: "PING"; payload?: unknown };
 
 export type WsOutboundMessage =
@@ -51,5 +55,10 @@ export type WsOutboundMessage =
   | { type: "SYNDICATE_CHAT_LIST_OK"; data: unknown }
   | { type: "LEAVE_SYNDICATE_OK"; data: unknown }
   | { type: "DISBAND_SYNDICATE_OK"; data: unknown }
+  | { type: "VIEW_SYNDICATE_MEMBER_OK"; data: unknown }
+  | { type: "VIEW_GOLD_BANK_OK"; data: unknown }
+  | { type: "VIEW_COMMODITY_BANK_OK"; data: unknown }
+  | { type: "VIEW_MEMBER_CONTRIBUTION_OK"; data: unknown }
+  | { type: "SYNDICATE_IDOL_EVENT"; data: unknown }
   | { type: "ERROR"; code: string; message: string; details?: unknown }
   | { type: "PONG" };

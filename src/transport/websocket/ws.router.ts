@@ -31,7 +31,11 @@ import {
   handleRequestJoin,
   handleSyndicateChatList,
   handleSyndicateChatSend,
+  handleViewCommodityBank,
+  handleViewGoldBank,
+  handleViewMemberContribution,
   handleViewSyndicate,
+  handleViewSyndicateMember,
 } from "./handlers/syndicate.handler.js";
 import { parseWsInbound, sendGameMessage } from "./ws.codec.js";
 import type { WsUserData } from "./ws.types.js";
@@ -135,6 +139,18 @@ export async function dispatchWsMessage(
       return;
     case "DISBAND_SYNDICATE":
       await handleDisbandSyndicate(ws, msg.payload, ctx.syndicates, ctx.userActions);
+      return;
+    case "VIEW_SYNDICATE_MEMBER":
+      await handleViewSyndicateMember(ws, msg.payload, ctx.syndicates);
+      return;
+    case "VIEW_GOLD_BANK":
+      await handleViewGoldBank(ws, msg.payload, ctx.syndicates);
+      return;
+    case "VIEW_COMMODITY_BANK":
+      await handleViewCommodityBank(ws, msg.payload, ctx.syndicates);
+      return;
+    case "VIEW_MEMBER_CONTRIBUTION":
+      await handleViewMemberContribution(ws, msg.payload, ctx.syndicates);
       return;
     default:
       logger.warn({ msg }, "unhandled ws message type");

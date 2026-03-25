@@ -94,3 +94,15 @@ export type SyndicateChatSendCommand = {
   text: string;
 };
 
+export type ViewSyndicateMemberQuery = {
+  syndicateId: string;
+};
+
+export type ViewBankQuery = {
+  syndicateId: string;
+};
+
+export type ViewContributionQuery = {
+  syndicateId: string;
+  userId: string;
+};

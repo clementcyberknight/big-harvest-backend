@@ -9,9 +9,23 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 function resolveLuaFile(name: string): string {
   const here = join(__dirname, "scripts", name);
   if (existsSync(here)) return here;
-  const fromSrc = join(process.cwd(), "src", "infrastructure", "redis", "scripts", name);
+  const fromSrc = join(
+    process.cwd(),
+    "src",
+    "infrastructure",
+    "redis",
+    "scripts",
+    name,
+  );
   if (existsSync(fromSrc)) return fromSrc;
-  const fromDist = join(process.cwd(), "dist", "infrastructure", "redis", "scripts", name);
+  const fromDist = join(
+    process.cwd(),
+    "dist",
+    "infrastructure",
+    "redis",
+    "scripts",
+    name,
+  );
   if (existsSync(fromDist)) return fromDist;
   throw new Error(`Missing Lua script: ${name}`);
 }
@@ -45,17 +59,44 @@ export async function loadRedisScripts(redis: Redis): Promise<void> {
   const loanOpenSrc = readFileSync(resolveLuaFile("loanOriginate.lua"), "utf8");
   const loanRepaySrc = readFileSync(resolveLuaFile("loanRepay.lua"), "utf8");
   const animalFeedSrc = readFileSync(resolveLuaFile("animalFeed.lua"), "utf8");
-  const animalHarvestSrc = readFileSync(resolveLuaFile("animalHarvest.lua"), "utf8");
+  const animalHarvestSrc = readFileSync(
+    resolveLuaFile("animalHarvest.lua"),
+    "utf8",
+  );
   const craftStartSrc = readFileSync(resolveLuaFile("craftStart.lua"), "utf8");
   const craftClaimSrc = readFileSync(resolveLuaFile("craftClaim.lua"), "utf8");
-  const syndicateCreateSrc = readFileSync(resolveLuaFile("syndicateCreate.lua"), "utf8");
-  const syndicateRequestJoinSrc = readFileSync(resolveLuaFile("syndicateRequestJoin.lua"), "utf8");
-  const syndicateAcceptJoinSrc = readFileSync(resolveLuaFile("syndicateAcceptJoin.lua"), "utf8");
-  const syndicateDepositSrc = readFileSync(resolveLuaFile("syndicateDeposit.lua"), "utf8");
-  const syndicateBuyShieldSrc = readFileSync(resolveLuaFile("syndicateBuyShield.lua"), "utf8");
-  const syndicateAttackSrc = readFileSync(resolveLuaFile("syndicateAttack.lua"), "utf8");
-  const syndicateIdolContributeSrc = readFileSync(resolveLuaFile("syndicateIdolContribute.lua"), "utf8");
-  const syndicateLeaveOrDisbandSrc = readFileSync(resolveLuaFile("syndicateLeaveOrDisband.lua"), "utf8");
+  const syndicateCreateSrc = readFileSync(
+    resolveLuaFile("syndicateCreate.lua"),
+    "utf8",
+  );
+  const syndicateRequestJoinSrc = readFileSync(
+    resolveLuaFile("syndicateRequestJoin.lua"),
+    "utf8",
+  );
+  const syndicateAcceptJoinSrc = readFileSync(
+    resolveLuaFile("syndicateAcceptJoin.lua"),
+    "utf8",
+  );
+  const syndicateDepositSrc = readFileSync(
+    resolveLuaFile("syndicateDeposit.lua"),
+    "utf8",
+  );
+  const syndicateBuyShieldSrc = readFileSync(
+    resolveLuaFile("syndicateBuyShield.lua"),
+    "utf8",
+  );
+  const syndicateAttackSrc = readFileSync(
+    resolveLuaFile("syndicateAttack.lua"),
+    "utf8",
+  );
+  const syndicateIdolContributeSrc = readFileSync(
+    resolveLuaFile("syndicateIdolContribute.lua"),
+    "utf8",
+  );
+  const syndicateLeaveOrDisbandSrc = readFileSync(
+    resolveLuaFile("syndicateLeaveOrDisband.lua"),
+    "utf8",
+  );
 
   plantSha = (await redis.script("LOAD", plantSrc)) as string;
   harvestSha = (await redis.script("LOAD", harvestSrc)) as string;
@@ -68,25 +109,65 @@ export async function loadRedisScripts(redis: Redis): Promise<void> {
   animalHarvestSha = (await redis.script("LOAD", animalHarvestSrc)) as string;
   craftStartSha = (await redis.script("LOAD", craftStartSrc)) as string;
   craftClaimSha = (await redis.script("LOAD", craftClaimSrc)) as string;
-  syndicateCreateSha = (await redis.script("LOAD", syndicateCreateSrc)) as string;
-  syndicateRequestJoinSha = (await redis.script("LOAD", syndicateRequestJoinSrc)) as string;
-  syndicateAcceptJoinSha = (await redis.script("LOAD", syndicateAcceptJoinSrc)) as string;
-  syndicateDepositSha = (await redis.script("LOAD", syndicateDepositSrc)) as string;
-  syndicateBuyShieldSha = (await redis.script("LOAD", syndicateBuyShieldSrc)) as string;
-  syndicateAttackSha = (await redis.script("LOAD", syndicateAttackSrc)) as string;
-  syndicateIdolContributeSha = (await redis.script("LOAD", syndicateIdolContributeSrc)) as string;
-  syndicateLeaveOrDisbandSha = (await redis.script("LOAD", syndicateLeaveOrDisbandSrc)) as string;
+  syndicateCreateSha = (await redis.script(
+    "LOAD",
+    syndicateCreateSrc,
+  )) as string;
+  syndicateRequestJoinSha = (await redis.script(
+    "LOAD",
+    syndicateRequestJoinSrc,
+  )) as string;
+  syndicateAcceptJoinSha = (await redis.script(
+    "LOAD",
+    syndicateAcceptJoinSrc,
+  )) as string;
+  syndicateDepositSha = (await redis.script(
+    "LOAD",
+    syndicateDepositSrc,
+  )) as string;
+  syndicateBuyShieldSha = (await redis.script(
+    "LOAD",
+    syndicateBuyShieldSrc,
+  )) as string;
+  syndicateAttackSha = (await redis.script(
+    "LOAD",
+    syndicateAttackSrc,
+  )) as string;
+  syndicateIdolContributeSha = (await redis.script(
+    "LOAD",
+    syndicateIdolContributeSrc,
+  )) as string;
+  syndicateLeaveOrDisbandSha = (await redis.script(
+    "LOAD",
+    syndicateLeaveOrDisbandSrc,
+  )) as string;
 }
 
 export type PlantScriptResult =
-  | { ok: true; cropId: string; plantedAtMs: number; readyAtMs: number; outputQty: number }
-  | { ok: true; idempotentReplay: true; cropId: string; plantedAtMs: number; readyAtMs: number; outputQty: number };
+  | {
+      ok: true;
+      cropId: string;
+      plantedAtMs: number;
+      readyAtMs: number;
+      outputQty: number;
+    }
+  | {
+      ok: true;
+      idempotentReplay: true;
+      cropId: string;
+      plantedAtMs: number;
+      readyAtMs: number;
+      outputQty: number;
+    };
 
 export type HarvestScriptResult =
   | { ok: true; itemId: string; quantity: number }
   | { ok: true; idempotentReplay: true; itemId: string; quantity: number };
 
-function parsePlantPayload(raw: string, idempotent: boolean): PlantScriptResult {
+function parsePlantPayload(
+  raw: string,
+  idempotent: boolean,
+): PlantScriptResult {
   const parts = raw.split("|");
   if (parts[0] !== "OK" || parts.length !== 5) {
     throw new Error(`Invalid plant payload: ${raw}`);
@@ -102,7 +183,10 @@ function parsePlantPayload(raw: string, idempotent: boolean): PlantScriptResult 
   return idempotent ? { ...base, idempotentReplay: true } : base;
 }
 
-function parseHarvestPayload(raw: string, idempotent: boolean): HarvestScriptResult {
+function parseHarvestPayload(
+  raw: string,
+  idempotent: boolean,
+): HarvestScriptResult {
   const parts = raw.split("|");
   if (parts[0] !== "OK" || parts.length !== 3) {
     throw new Error(`Invalid harvest payload: ${raw}`);
@@ -151,7 +235,8 @@ export async function redisPlant(
     return parsePlantPayload(res, false);
   } catch (e) {
     if (isReplyError(e) && e.message.includes("ERR_PLOT_OCCUPIED")) throw e;
-    if (isReplyError(e) && e.message.includes("ERR_INSUFFICIENT_SEEDS")) throw e;
+    if (isReplyError(e) && e.message.includes("ERR_INSUFFICIENT_SEEDS"))
+      throw e;
     if (isReplyError(e) && e.message.includes("NOSCRIPT")) {
       await loadRedisScripts(redis);
       return redisPlant(redis, keys, args);
@@ -259,7 +344,11 @@ function parseTreasuryPayload(raw: string): TreasuryTradeScriptResult {
   if (parts[0] !== "OK" || parts.length !== 4) {
     throw new Error(`Invalid treasury payload: ${raw}`);
   }
-  return { item: parts[1]!, quantity: Number(parts[2]), gold: Number(parts[3]) };
+  return {
+    item: parts[1]!,
+    quantity: Number(parts[2]),
+    gold: Number(parts[3]),
+  };
 }
 
 export async function redisTreasurySell(
@@ -784,23 +873,28 @@ export async function redisSyndicateRequestJoin(
     rolesKey: string;
     joinReqKey: string;
     idempKey: string;
+    userLevelKey: string;
+    userWalletKey: string;
   },
-  args: { userId: string; nowMs: number; idempTtlSec: number },
+  args: { userId: string; nowMs: number; idempTtlSec: number; maxMembers: number },
 ): Promise<"OK|JOINED" | "OK|REQUESTED"> {
   if (!syndicateRequestJoinSha) throw new Error("Redis scripts not loaded");
   try {
     const res = (await redis.evalsha(
       syndicateRequestJoinSha,
-      6,
+      8,
       keys.userSyndicateKey,
       keys.metaKey,
       keys.membersKey,
       keys.rolesKey,
       keys.joinReqKey,
       keys.idempKey,
+      keys.userLevelKey,
+      keys.userWalletKey,
       args.userId,
       String(args.nowMs),
       String(args.idempTtlSec),
+      String(args.maxMembers),
     )) as string;
     if (res === "OK|JOINED" || res === "OK|REQUESTED") return res;
     throw new Error(`Invalid syndicate request join reply: ${res}`);
@@ -829,6 +923,7 @@ export async function redisSyndicateAcceptJoin(
     targetUserId: string;
     nowMs: number;
     idempTtlSec: number;
+    maxMembers: number;
   },
 ): Promise<"OK"> {
   if (!syndicateAcceptJoinSha) throw new Error("Redis scripts not loaded");
@@ -847,6 +942,7 @@ export async function redisSyndicateAcceptJoin(
       args.targetUserId,
       String(args.nowMs),
       String(args.idempTtlSec),
+      String(args.maxMembers),
     )) as string;
     if (res === "OK") return "OK";
     throw new Error(`Invalid syndicate accept reply: ${res}`);
@@ -870,6 +966,7 @@ export async function redisSyndicateDeposit(
     contribGoldKey: string;
     contribItemsKey: string;
     idempKey: string;
+    holdingsKey: string;
   },
   args: {
     userId: string;
@@ -885,7 +982,7 @@ export async function redisSyndicateDeposit(
   try {
     const res = (await redis.evalsha(
       syndicateDepositSha,
-      8,
+      9,
       keys.userSyndicateKey,
       keys.userWalletKey,
       keys.userInvKey,
@@ -894,6 +991,7 @@ export async function redisSyndicateDeposit(
       keys.contribGoldKey,
       keys.contribItemsKey,
       keys.idempKey,
+      keys.holdingsKey,
       args.userId,
       args.syndicateId,
       args.kind,

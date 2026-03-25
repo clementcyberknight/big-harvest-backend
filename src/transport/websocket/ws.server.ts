@@ -9,7 +9,19 @@ import {
 } from "../http/registerAuthHttp.js";
 import { sendGameMessage } from "./ws.codec.js";
 import { dispatchWsMessage, type WsGameContext } from "./ws.router.js";
-import type { WsUserData } from "./ws.types.js";
+import type { WsOutboundMessage, WsUserData } from "./ws.types.js";
+
+// Global reference for broadcasting outside WS handlers (e.g. workers)
+let globalApp: ReturnType<typeof App> | null = null;
+
+export function broadcastToSyndicate(
+  syndicateId: string,
+  message: WsOutboundMessage,
+) {
+  if (!globalApp) return;
+  const topic = `syndicate:${syndicateId}`;
+  globalApp.publish(topic, JSON.stringify(message), false);
+}
 
 export type ListenToken = unknown;
 
@@ -17,6 +29,7 @@ export type WsAppContext = WsGameContext & AuthHttpDeps;
 
 export function createWsApp(ctx: WsAppContext) {
   const app = App();
+  globalApp = app;
 
   registerAuthHttp(app, {
     auth: ctx.auth,
@@ -24,81 +37,99 @@ export function createWsApp(ctx: WsAppContext) {
     userActions: ctx.userActions,
   });
 
-  return (
-    app
-      .ws<WsUserData>("/*", {
-        compression: DISABLED,
-        idleTimeout: 120,
-        maxPayloadLength: 16 * 1024,
-        upgrade(res, req, context) {
-          let userId: string;
+  return app.ws<WsUserData>("/*", {
+    compression: DISABLED,
+    idleTimeout: 120,
+    maxPayloadLength: 16 * 1024,
+    upgrade(res, req, context) {
+      let userId: string;
 
-          if (env.AUTH_DEV_BYPASS) {
-            const q = req.getQuery("userId") ?? "";
-            if (!q) {
-              res
-                .writeStatus("401 Unauthorized")
-                .end("userId query required when AUTH_DEV_BYPASS=true");
-              return;
-            }
-            userId = q;
-          } else {
-            const header = req.getHeader("authorization");
-            let token = "";
-            if (header?.toLowerCase().startsWith("bearer ")) {
-              token = header.slice(7).trim();
-            }
-            if (!token) {
-              token = (req.getQuery("token") ?? "").trim();
-            }
-            if (!token) {
-              res
-                .writeStatus("401 Unauthorized")
-                .end("JWT required: Authorization: Bearer <token> or ?token=");
-              return;
-            }
-            const payload = verifyAccessToken(token);
-            if (!payload) {
-              res.writeStatus("401 Unauthorized").end("Invalid or expired token");
-              return;
-            }
-            userId = payload.sub;
-          }
+      if (env.AUTH_DEV_BYPASS) {
+        const q = req.getQuery("userId") ?? "";
+        if (!q) {
+          res
+            .writeStatus("401 Unauthorized")
+            .end("userId query required when AUTH_DEV_BYPASS=true");
+          return;
+        }
+        userId = q;
+      } else {
+        const header = req.getHeader("authorization");
+        let token = "";
+        if (header?.toLowerCase().startsWith("bearer ")) {
+          token = header.slice(7).trim();
+        }
+        if (!token) {
+          token = (req.getQuery("token") ?? "").trim();
+        }
+        if (!token) {
+          res
+            .writeStatus("401 Unauthorized")
+            .end("JWT required: Authorization: Bearer <token> or ?token=");
+          return;
+        }
+        const payload = verifyAccessToken(token);
+        if (!payload) {
+          res.writeStatus("401 Unauthorized").end("Invalid or expired token");
+          return;
+        }
+        userId = payload.sub;
+      }
 
-          res.upgrade(
-            { userId },
-            req.getHeader("sec-websocket-key"),
-            req.getHeader("sec-websocket-protocol"),
-            req.getHeader("sec-websocket-extensions"),
-            context,
+      res.upgrade(
+        { userId },
+        req.getHeader("sec-websocket-key"),
+        req.getHeader("sec-websocket-protocol"),
+        req.getHeader("sec-websocket-extensions"),
+        context,
+      );
+    },
+    open(ws: WebSocket<WsUserData>) {
+      /* userId set in upgrade */
+      void (async () => {
+        try {
+          const sid = await ctx.syndicates
+            .viewMembers(ws.getUserData().userId, { syndicateId: "auth-check" })
+            .catch(() => null);
+          const userSid = await ctx.syndicates.getUserSyndicateId(
+            ws.getUserData().userId,
           );
-        },
-        open(_ws: WebSocket<WsUserData>) {
-          /* userId set in upgrade */
-        },
-        message(ws, message, isBinary) {
-          void ctx.syndicates.touchPresence(ws.getUserData().userId);
-          void dispatchWsMessage(ws, message, isBinary, ctx).catch((err) => {
-            logger.error({ err, userId: ws.getUserData().userId }, "ws dispatch failed");
-            try {
-              sendGameMessage(ws, {
-                type: "ERROR",
-                code: "INTERNAL",
-                message: "Internal error",
-              });
-            } catch {
-              /* ignore */
-            }
+          if (userSid) {
+            ws.subscribe(`syndicate:${userSid}`);
+          }
+        } catch {
+          /* ignore */
+        }
+      })();
+    },
+    message(ws, message, isBinary) {
+      void ctx.syndicates.touchPresence(ws.getUserData().userId);
+      void dispatchWsMessage(ws, message, isBinary, ctx).catch((err) => {
+        logger.error(
+          { err, userId: ws.getUserData().userId },
+          "ws dispatch failed",
+        );
+        try {
+          sendGameMessage(ws, {
+            type: "ERROR",
+            code: "INTERNAL",
+            message: "Internal error",
           });
-        },
-        close(ws, code, _reason) {
-          logger.debug({ userId: ws.getUserData().userId, code }, "ws closed");
-        },
-      })
-  );
+        } catch {
+          /* ignore */
+        }
+      });
+    },
+    close(ws, code, _reason) {
+      logger.debug({ userId: ws.getUserData().userId, code }, "ws closed");
+    },
+  });
 }
 
-export function listenGameWs(app: ReturnType<typeof createWsApp>, port: number): Promise<ListenToken> {
+export function listenGameWs(
+  app: ReturnType<typeof createWsApp>,
+  port: number,
+): Promise<ListenToken> {
   return new Promise((resolve, reject) => {
     app.listen(port, (token) => {
       if (!token) {

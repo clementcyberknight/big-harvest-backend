@@ -76,3 +76,15 @@ export const syndicateChatSendSchema = z.object({
   text: z.string().trim().min(1).max(400),
 });
 
+export const viewSyndicateMemberSchema = z.object({
+  syndicateId: z.string().min(1).max(64),
+});
+
+export const viewBankSchema = z.object({
+  syndicateId: z.string().min(1).max(64),
+});
+
+export const viewContributionSchema = z.object({
+  syndicateId: z.string().min(1).max(64),
+  userId: z.string().min(1).max(128),
+});

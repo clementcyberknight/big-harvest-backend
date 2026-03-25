@@ -103,10 +103,7 @@ export class AuthService {
 
     const profile = await this.profiles.findById(session.userId);
     if (!profile || profile.walletAddress !== session.walletAddress) {
-      throw new AppError(
-        "INVALID_REFRESH_TOKEN",
-        "Session no longer valid",
-      );
+      throw new AppError("INVALID_REFRESH_TOKEN", "Session no longer valid");
     }
 
     const accessToken = signAccessToken(profile.id, profile.walletAddress);
