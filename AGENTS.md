@@ -7,7 +7,7 @@ This repository is the **real-time game backend** for **Ravolo** a farming + glo
 ## Product & performance bar
 
 - **SLO:** ~**100 ms average** end-to-end for player actions over WebSockets (validate → authoritative state change → ack). Optimize the hot path continuously.
-- **Hot path:** connection auth, routing, **Redis Lua** for mutations that must be atomic, minimal JS work, structured logs (pino), binary payloads where it helps (msgpack).
+- **Hot path:** connection auth, routing, **Redis Lua** for mutations that must be atomic, minimal JS work, **structured logs (pino only; no `console` in modules/transport)**, **WebSocket binary MessagePack** (`msgpackr` in `transport/websocket/ws.codec.ts` — outbound always binary; inbound accepts msgpack binary or UTF-8 JSON for dev/tools).
 - **Cold path:** pricing ticks, settlements, heavy analytics → **workers** (BullMQ), **not** inside WS handlers.
 
 ---
@@ -126,6 +126,7 @@ src/
 │   ├── websocket/
 │   │   ├── ws.server.ts
 │   │   ├── ws.router.ts
+│   │   ├── ws.codec.ts         # MessagePack binary frames (hot path)
 │   │   └── handlers/
 │   │       ├── plant.handler.ts
 │   │       ├── harvest.handler.ts
@@ -134,7 +135,7 @@ src/
 │
 ├── workers/                    # Background Workers
 │   ├── pricing.worker.ts
-│   └── settlement.worker.ts
+│   └── userActionsFlush.worker.ts
 │
 └── shared/
     ├── utils/
@@ -243,7 +244,7 @@ Before shipping any feature that spends or grants value, answer: **Is it atomic?
 - **Queues / workers:** BullMQ
 - **DB client:** Supabase JS (adapt to your actual Postgres access pattern)
 - **Validation:** Zod
-- **Logging:** pino
+- **Logging:** pino (`infrastructure/logger/logger.ts`; redacts common secret fields in structured logs)
 
 Align new dependencies with this architecture; prefer boring, fast primitives over heavy frameworks on the hot path.
 

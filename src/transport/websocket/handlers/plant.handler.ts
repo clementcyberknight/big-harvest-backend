@@ -4,11 +4,8 @@ import type { PlantingService } from "../../../modules/planting/planting.service
 import type { UserActionService } from "../../../modules/user-actions/userAction.service.js";
 import { AppError } from "../../../shared/errors/appError.js";
 import { wsActionLimiter } from "../ws.rateLimiter.js";
+import { sendGameMessage as send } from "../ws.codec.js";
 import type { WsOutboundMessage, WsUserData } from "../ws.types.js";
-
-function send(ws: WebSocket<WsUserData>, msg: WsOutboundMessage): void {
-  ws.send(JSON.stringify(msg), false);
-}
 
 export async function handlePlant(
   ws: WebSocket<WsUserData>,

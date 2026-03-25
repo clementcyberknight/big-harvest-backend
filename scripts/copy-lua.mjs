@@ -23,6 +23,14 @@ for (const name of [
   "animalHarvest.lua",
   "craftStart.lua",
   "craftClaim.lua",
+  "syndicateCreate.lua",
+  "syndicateRequestJoin.lua",
+  "syndicateAcceptJoin.lua",
+  "syndicateDeposit.lua",
+  "syndicateBuyShield.lua",
+  "syndicateAttack.lua",
+  "syndicateIdolContribute.lua",
+  "syndicateLeaveOrDisband.lua",
 ]) {
   cpSync(join(srcDir, name), join(destDir, name));
 }

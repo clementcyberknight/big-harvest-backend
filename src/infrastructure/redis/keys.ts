@@ -131,7 +131,98 @@ export function authChallengeKey(challengeId: string): string {
   return `ravolo:auth:challenge:${challengeId}`;
 }
 
+/** SHA-256 hex of opaque refresh token (never store raw token in key logs). */
+export function refreshTokenStorageKey(tokenHashHex: string): string {
+  return `ravolo:auth:rt:${tokenHashHex}`;
+}
+
 /** LIST of JSON lines; worker batches to Supabase (hot path only RPUSH). */
 export function userActionsQueueKey(): string {
   return "ravolo:user_actions:queue";
+}
+
+// --- Syndicates ---
+
+export function userSyndicateIdKey(userId: string): string {
+  return `ravolo:${userTag(userId)}:syndicate_id`;
+}
+
+export function userLastSeenKey(userId: string): string {
+  return `ravolo:${userTag(userId)}:last_seen_ms`;
+}
+
+export function userAttackCooldownKey(userId: string): string {
+  return `ravolo:${userTag(userId)}:attack_cd_until`;
+}
+
+export function syndicateSeqKey(): string {
+  return "ravolo:syndicate:seq";
+}
+
+export function syndicateIndexAllKey(): string {
+  return "ravolo:syndicate:index:all";
+}
+
+export function syndicateIndexPublicKey(): string {
+  return "ravolo:syndicate:index:public";
+}
+
+export function syndicateNameIndexKey(): string {
+  return "ravolo:syndicate:index:name";
+}
+
+export function syndicateMetaKey(syndicateId: string): string {
+  return `ravolo:syndicate:${syndicateId}:meta`;
+}
+
+export function syndicateMembersKey(syndicateId: string): string {
+  return `ravolo:syndicate:${syndicateId}:members`;
+}
+
+export function syndicateMemberRolesKey(syndicateId: string): string {
+  return `ravolo:syndicate:${syndicateId}:member_roles`;
+}
+
+export function syndicateJoinRequestsKey(syndicateId: string): string {
+  return `ravolo:syndicate:${syndicateId}:join_requests`;
+}
+
+export function syndicateBankGoldKey(syndicateId: string): string {
+  return `ravolo:syndicate:${syndicateId}:bank_gold`;
+}
+
+export function syndicateBankItemsKey(syndicateId: string): string {
+  return `ravolo:syndicate:${syndicateId}:bank_items`;
+}
+
+export function syndicateHoldingsKey(syndicateId: string): string {
+  return `ravolo:syndicate:${syndicateId}:holdings`;
+}
+
+export function syndicateShieldExpiresAtKey(syndicateId: string): string {
+  return `ravolo:syndicate:${syndicateId}:shield_expires_at`;
+}
+
+export function syndicateIdolKey(syndicateId: string): string {
+  return `ravolo:syndicate:${syndicateId}:idol`;
+}
+
+export function syndicateIdolRequestKey(syndicateId: string, requestKey: string): string {
+  return `ravolo:syndicate:${syndicateId}:idol:req:${requestKey}`;
+}
+
+export function syndicateChatKey(syndicateId: string): string {
+  return `ravolo:syndicate:${syndicateId}:chat`;
+}
+
+export function syndicateMemberSeenKey(syndicateId: string): string {
+  return `ravolo:syndicate:${syndicateId}:member_seen`;
+}
+
+export function syndicateContributionGoldKey(syndicateId: string): string {
+  return `ravolo:syndicate:${syndicateId}:contrib_gold`;
+}
+
+export function syndicateContributionItemsKey(syndicateId: string): string {
+  return `ravolo:syndicate:${syndicateId}:contrib_items`;
 }

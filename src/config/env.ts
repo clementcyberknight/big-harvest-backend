@@ -12,7 +12,10 @@ const schema = z.object({
     .string()
     .min(1, "SUPABASE_SERVICE_ROLE_KEY is required"),
   JWT_SECRET: z.string().min(16, "JWT_SECRET must be at least 16 characters"),
-  JWT_EXPIRES_IN: z.string().default("7d"),
+  /** Short-lived access JWT (WS + API). Use refresh token for long sessions. */
+  JWT_ACCESS_EXPIRES_IN: z.string().default("24h"),
+  /** Long-lived session; stored in Redis keyed by hash(refresh token). */
+  REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().max(365).default(90),
   AUTH_CHALLENGE_TTL_SEC: z.coerce.number().int().positive().default(300),
   AUTH_DEV_BYPASS: z
     .string()
@@ -35,9 +38,11 @@ export const env: Env = schema.parse({
   SUPABASE_URL: process.env.SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
   JWT_SECRET: process.env.JWT_SECRET,
-  JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN,
+  JWT_ACCESS_EXPIRES_IN:
+    process.env.JWT_ACCESS_EXPIRES_IN ?? process.env.JWT_EXPIRES_IN ?? "24h",
   AUTH_CHALLENGE_TTL_SEC: process.env.AUTH_CHALLENGE_TTL_SEC,
   AUTH_DEV_BYPASS: process.env.AUTH_DEV_BYPASS,
+  REFRESH_TOKEN_TTL_DAYS: process.env.REFRESH_TOKEN_TTL_DAYS,
   USER_ACTIONS_BATCH_SIZE: process.env.USER_ACTIONS_BATCH_SIZE,
   USER_ACTIONS_POLL_MS: process.env.USER_ACTIONS_POLL_MS,
   USER_ACTIONS_MAX_LINE_BYTES: process.env.USER_ACTIONS_MAX_LINE_BYTES,

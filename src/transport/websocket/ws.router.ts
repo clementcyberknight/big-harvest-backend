@@ -7,6 +7,7 @@ import type { LoanService } from "../../modules/loan/loan.service.js";
 import type { MarketService } from "../../modules/market/market.service.js";
 import type { PlantingService } from "../../modules/planting/planting.service.js";
 import type { UserActionService } from "../../modules/user-actions/userAction.service.js";
+import type { SyndicateService } from "../../modules/syndicate/syndicate.service.js";
 import {
   handleAnimalFeed,
   handleAnimalHarvest,
@@ -17,11 +18,23 @@ import { handleLoanOpen, handleLoanRepay } from "./handlers/loan.handler.js";
 import { handleHarvest } from "./handlers/harvest.handler.js";
 import { handlePlant } from "./handlers/plant.handler.js";
 import { handleSell } from "./handlers/sell.handler.js";
-import type {
-  WsInboundMessage,
-  WsOutboundMessage,
-  WsUserData,
-} from "./ws.types.js";
+import {
+  handleAcceptRequest,
+  handleAttackSyndicate,
+  handleBuyShield,
+  handleCreateSyndicate,
+  handleDepositBank,
+  handleDisbandSyndicate,
+  handleIdolContribute,
+  handleLeaveSyndicate,
+  handleListSyndicate,
+  handleRequestJoin,
+  handleSyndicateChatList,
+  handleSyndicateChatSend,
+  handleViewSyndicate,
+} from "./handlers/syndicate.handler.js";
+import { parseWsInbound, sendGameMessage } from "./ws.codec.js";
+import type { WsUserData } from "./ws.types.js";
 
 export type WsGameContext = {
   planting: PlantingService;
@@ -31,50 +44,18 @@ export type WsGameContext = {
   animals: AnimalService;
   crafting: CraftingService;
   userActions: UserActionService;
+  syndicates: SyndicateService;
 };
-
-function send(ws: WebSocket<WsUserData>, msg: WsOutboundMessage): void {
-  ws.send(JSON.stringify(msg), false);
-}
-
-function parseInbound(text: string): WsInboundMessage | null {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(text) as unknown;
-  } catch {
-    return null;
-  }
-  if (typeof raw !== "object" || raw === null) return null;
-  const o = raw as Record<string, unknown>;
-  const type = o.type;
-  if (
-    type === "PLANT" ||
-    type === "HARVEST" ||
-    type === "SELL" ||
-    type === "BUY" ||
-    type === "LOAN_OPEN" ||
-    type === "LOAN_REPAY" ||
-    type === "ANIMAL_FEED" ||
-    type === "ANIMAL_HARVEST" ||
-    type === "CRAFT_START" ||
-    type === "CRAFT_CLAIM"
-  ) {
-    return { type, payload: o.payload } as WsInboundMessage;
-  }
-  if (type === "PING") {
-    return { type: "PING", payload: o.payload };
-  }
-  return null;
-}
 
 export async function dispatchWsMessage(
   ws: WebSocket<WsUserData>,
-  text: string,
+  rawMessage: ArrayBuffer | Uint8Array,
+  isBinary: boolean,
   ctx: WsGameContext,
 ): Promise<void> {
-  const msg = parseInbound(text);
+  const msg = parseWsInbound(rawMessage, isBinary);
   if (!msg) {
-    send(ws, {
+    sendGameMessage(ws, {
       type: "ERROR",
       code: "BAD_REQUEST",
       message: "Invalid message",
@@ -84,7 +65,7 @@ export async function dispatchWsMessage(
 
   switch (msg.type) {
     case "PING":
-      send(ws, { type: "PONG" });
+      sendGameMessage(ws, { type: "PONG" });
       return;
     case "PLANT":
       await handlePlant(ws, msg.payload, ctx.planting, ctx.userActions);
@@ -116,9 +97,48 @@ export async function dispatchWsMessage(
     case "CRAFT_CLAIM":
       await handleCraftClaim(ws, msg.payload, ctx.crafting, ctx.userActions);
       return;
+    case "CREATE_SYNDICATE":
+      await handleCreateSyndicate(ws, msg.payload, ctx.syndicates, ctx.userActions);
+      return;
+    case "LIST_SYNDICATE":
+      await handleListSyndicate(ws, msg.payload, ctx.syndicates);
+      return;
+    case "VIEW_SYNDICATE":
+      await handleViewSyndicate(ws, msg.payload, ctx.syndicates);
+      return;
+    case "REQUEST_JOIN":
+      await handleRequestJoin(ws, msg.payload, ctx.syndicates, ctx.userActions);
+      return;
+    case "ACCEPT_REQUEST":
+      await handleAcceptRequest(ws, msg.payload, ctx.syndicates, ctx.userActions);
+      return;
+    case "DEPOSIT_BANK":
+      await handleDepositBank(ws, msg.payload, ctx.syndicates, ctx.userActions);
+      return;
+    case "BUY_SHIELD":
+      await handleBuyShield(ws, msg.payload, ctx.syndicates, ctx.userActions);
+      return;
+    case "ATTACK_SYNDICATE":
+      await handleAttackSyndicate(ws, msg.payload, ctx.syndicates, ctx.userActions);
+      return;
+    case "IDOL_CONTRIBUTE":
+      await handleIdolContribute(ws, msg.payload, ctx.syndicates, ctx.userActions);
+      return;
+    case "SYNDICATE_CHAT_SEND":
+      await handleSyndicateChatSend(ws, msg.payload, ctx.syndicates);
+      return;
+    case "SYNDICATE_CHAT_LIST":
+      await handleSyndicateChatList(ws, msg.payload, ctx.syndicates);
+      return;
+    case "LEAVE_SYNDICATE":
+      await handleLeaveSyndicate(ws, msg.payload, ctx.syndicates, ctx.userActions);
+      return;
+    case "DISBAND_SYNDICATE":
+      await handleDisbandSyndicate(ws, msg.payload, ctx.syndicates, ctx.userActions);
+      return;
     default:
       logger.warn({ msg }, "unhandled ws message type");
-      send(ws, {
+      sendGameMessage(ws, {
         type: "ERROR",
         code: "BAD_REQUEST",
         message: "Unknown type",

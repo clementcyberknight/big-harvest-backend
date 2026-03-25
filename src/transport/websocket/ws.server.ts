@@ -7,6 +7,7 @@ import {
   registerAuthHttp,
   type AuthHttpDeps,
 } from "../http/registerAuthHttp.js";
+import { sendGameMessage } from "./ws.codec.js";
 import { dispatchWsMessage, type WsGameContext } from "./ws.router.js";
 import type { WsUserData } from "./ws.types.js";
 
@@ -75,19 +76,16 @@ export function createWsApp(ctx: WsAppContext) {
         open(_ws: WebSocket<WsUserData>) {
           /* userId set in upgrade */
         },
-        message(ws, message, _isBinary) {
-          const text = Buffer.from(message).toString("utf8");
-          void dispatchWsMessage(ws, text, ctx).catch((err) => {
+        message(ws, message, isBinary) {
+          void ctx.syndicates.touchPresence(ws.getUserData().userId);
+          void dispatchWsMessage(ws, message, isBinary, ctx).catch((err) => {
             logger.error({ err, userId: ws.getUserData().userId }, "ws dispatch failed");
             try {
-              ws.send(
-                JSON.stringify({
-                  type: "ERROR",
-                  code: "INTERNAL",
-                  message: "Internal error",
-                }),
-                false,
-              );
+              sendGameMessage(ws, {
+                type: "ERROR",
+                code: "INTERNAL",
+                message: "Internal error",
+              });
             } catch {
               /* ignore */
             }

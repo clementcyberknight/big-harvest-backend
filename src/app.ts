@@ -12,6 +12,7 @@ import { LoanService } from "./modules/loan/loan.service.js";
 import { MarketService } from "./modules/market/market.service.js";
 import { PlantingService } from "./modules/planting/planting.service.js";
 import { ProfileService } from "./modules/profile/profile.service.js";
+import { SyndicateService } from "./modules/syndicate/syndicate.service.js";
 import { UserActionService } from "./modules/user-actions/userAction.service.js";
 import {
   createWsApp,
@@ -52,6 +53,7 @@ export async function startApp(): Promise<AppInstance> {
   const auth = new AuthService(redis, profile);
   const userActions = new UserActionService(redis);
   const stopUserActionsWorker = startUserActionsFlushWorker(redis);
+  const syndicates = new SyndicateService(redis);
 
   const ctx: WsAppContext = {
     planting: new PlantingService(redis),
@@ -61,6 +63,7 @@ export async function startApp(): Promise<AppInstance> {
     animals,
     crafting,
     userActions,
+    syndicates,
     auth,
     profile,
   };

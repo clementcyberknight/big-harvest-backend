@@ -5,7 +5,10 @@ import type { AuthService } from "../../modules/auth/auth.service.js";
 import type { ProfileService } from "../../modules/profile/profile.service.js";
 import type { UserActionService } from "../../modules/user-actions/userAction.service.js";
 import { usernameUpdateSchema } from "../../modules/profile/username.validator.js";
-import { verifyAccessToken } from "../../modules/auth/jwt.js";
+import {
+  accessTokenExpUnix,
+  verifyAccessToken,
+} from "../../modules/auth/jwt.js";
 import {
   applyCors,
   readRequestBody,
@@ -22,6 +25,7 @@ export type AuthHttpDeps = {
 function httpStatusForAppError(code: string): string {
   switch (code) {
     case "INVALID_SIGNATURE":
+    case "INVALID_REFRESH_TOKEN":
       return "401 Unauthorized";
     case "CHALLENGE_EXPIRED":
       return "400 Bad Request";
@@ -105,9 +109,13 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
         void deps.userActions.log(result.profile.id, "AUTH_SOLANA_VERIFY", {
           isNewUser: result.isNewUser,
         });
+        const accessExp = accessTokenExpUnix(result.accessToken);
         sendJson(res, "200 OK", {
           accessToken: result.accessToken,
-          expiresIn: env.JWT_EXPIRES_IN,
+          refreshToken: result.refreshToken,
+          accessExpiresIn: env.JWT_ACCESS_EXPIRES_IN,
+          accessExpiresAt: accessExp,
+          refreshExpiresInSec: env.REFRESH_TOKEN_TTL_DAYS * 86_400,
           profile: {
             id: result.profile.id,
             walletAddress: result.profile.walletAddress,
@@ -127,6 +135,83 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
         }
         sendJson(res, "500 Internal Server Error", { error: "Internal error" });
       }
+    })();
+  });
+
+  app.post("/auth/refresh", (res, req) => {
+    applyCors(res);
+    void (async () => {
+      const raw = await readRequestBody(res);
+      if (raw === null) return;
+
+      let body: { refreshToken?: string };
+      try {
+        body = JSON.parse(raw) as typeof body;
+      } catch {
+        sendJson(res, "400 Bad Request", { error: "Invalid JSON" });
+        return;
+      }
+
+      const rt =
+        typeof body.refreshToken === "string" ? body.refreshToken.trim() : "";
+      if (!rt) {
+        sendJson(res, "400 Bad Request", {
+          error: "refreshToken is required",
+        });
+        return;
+      }
+
+      try {
+        const session = await deps.auth.refreshSession(rt);
+        void deps.userActions.log(session.profile.id, "AUTH_REFRESH", {});
+        const accessExp = accessTokenExpUnix(session.accessToken);
+        sendJson(res, "200 OK", {
+          accessToken: session.accessToken,
+          refreshToken: session.refreshToken,
+          accessExpiresIn: env.JWT_ACCESS_EXPIRES_IN,
+          accessExpiresAt: accessExp,
+          refreshExpiresInSec: env.REFRESH_TOKEN_TTL_DAYS * 86_400,
+          profile: {
+            id: session.profile.id,
+            walletAddress: session.profile.walletAddress,
+            username: session.profile.username,
+            createdAt: session.profile.createdAt,
+            achievements: session.profile.achievements,
+          },
+        });
+      } catch (e) {
+        if (e instanceof AppError) {
+          sendJson(res, httpStatusForAppError(e.code), {
+            error: e.code,
+            message: e.httpSafeMessage,
+          });
+          return;
+        }
+        sendJson(res, "500 Internal Server Error", { error: "Internal error" });
+      }
+    })();
+  });
+
+  app.post("/auth/logout", (res, req) => {
+    applyCors(res);
+    void (async () => {
+      const raw = await readRequestBody(res);
+      if (raw === null) return;
+
+      let body: { refreshToken?: string };
+      try {
+        body = JSON.parse(raw) as typeof body;
+      } catch {
+        sendJson(res, "400 Bad Request", { error: "Invalid JSON" });
+        return;
+      }
+
+      const rt =
+        typeof body.refreshToken === "string" ? body.refreshToken.trim() : "";
+      if (rt) {
+        await deps.auth.revokeRefreshToken(rt);
+      }
+      sendJson(res, "200 OK", { ok: true });
     })();
   });
 

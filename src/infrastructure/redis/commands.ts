@@ -27,6 +27,14 @@ let animalFeedSha: string | null = null;
 let animalHarvestSha: string | null = null;
 let craftStartSha: string | null = null;
 let craftClaimSha: string | null = null;
+let syndicateCreateSha: string | null = null;
+let syndicateRequestJoinSha: string | null = null;
+let syndicateAcceptJoinSha: string | null = null;
+let syndicateDepositSha: string | null = null;
+let syndicateBuyShieldSha: string | null = null;
+let syndicateAttackSha: string | null = null;
+let syndicateIdolContributeSha: string | null = null;
+let syndicateLeaveOrDisbandSha: string | null = null;
 
 export async function loadRedisScripts(redis: Redis): Promise<void> {
   const plantSrc = readFileSync(resolveLuaFile("plant.lua"), "utf8");
@@ -40,6 +48,14 @@ export async function loadRedisScripts(redis: Redis): Promise<void> {
   const animalHarvestSrc = readFileSync(resolveLuaFile("animalHarvest.lua"), "utf8");
   const craftStartSrc = readFileSync(resolveLuaFile("craftStart.lua"), "utf8");
   const craftClaimSrc = readFileSync(resolveLuaFile("craftClaim.lua"), "utf8");
+  const syndicateCreateSrc = readFileSync(resolveLuaFile("syndicateCreate.lua"), "utf8");
+  const syndicateRequestJoinSrc = readFileSync(resolveLuaFile("syndicateRequestJoin.lua"), "utf8");
+  const syndicateAcceptJoinSrc = readFileSync(resolveLuaFile("syndicateAcceptJoin.lua"), "utf8");
+  const syndicateDepositSrc = readFileSync(resolveLuaFile("syndicateDeposit.lua"), "utf8");
+  const syndicateBuyShieldSrc = readFileSync(resolveLuaFile("syndicateBuyShield.lua"), "utf8");
+  const syndicateAttackSrc = readFileSync(resolveLuaFile("syndicateAttack.lua"), "utf8");
+  const syndicateIdolContributeSrc = readFileSync(resolveLuaFile("syndicateIdolContribute.lua"), "utf8");
+  const syndicateLeaveOrDisbandSrc = readFileSync(resolveLuaFile("syndicateLeaveOrDisband.lua"), "utf8");
 
   plantSha = (await redis.script("LOAD", plantSrc)) as string;
   harvestSha = (await redis.script("LOAD", harvestSrc)) as string;
@@ -52,6 +68,14 @@ export async function loadRedisScripts(redis: Redis): Promise<void> {
   animalHarvestSha = (await redis.script("LOAD", animalHarvestSrc)) as string;
   craftStartSha = (await redis.script("LOAD", craftStartSrc)) as string;
   craftClaimSha = (await redis.script("LOAD", craftClaimSrc)) as string;
+  syndicateCreateSha = (await redis.script("LOAD", syndicateCreateSrc)) as string;
+  syndicateRequestJoinSha = (await redis.script("LOAD", syndicateRequestJoinSrc)) as string;
+  syndicateAcceptJoinSha = (await redis.script("LOAD", syndicateAcceptJoinSrc)) as string;
+  syndicateDepositSha = (await redis.script("LOAD", syndicateDepositSrc)) as string;
+  syndicateBuyShieldSha = (await redis.script("LOAD", syndicateBuyShieldSrc)) as string;
+  syndicateAttackSha = (await redis.script("LOAD", syndicateAttackSrc)) as string;
+  syndicateIdolContributeSha = (await redis.script("LOAD", syndicateIdolContributeSrc)) as string;
+  syndicateLeaveOrDisbandSha = (await redis.script("LOAD", syndicateLeaveOrDisbandSrc)) as string;
 }
 
 export type PlantScriptResult =
@@ -677,6 +701,448 @@ export async function redisCraftClaim(
     if (isReplyError(e) && e.message.includes("NOSCRIPT")) {
       await loadRedisScripts(redis);
       return redisCraftClaim(redis, keys, args);
+    }
+    throw e;
+  }
+}
+
+// --- Syndicates ---
+
+export type SyndicateCreateResult = { syndicateId: string };
+
+function parseSyndicateCreatePayload(raw: string): SyndicateCreateResult {
+  const parts = raw.split("|");
+  if (parts[0] !== "OK" || parts.length !== 2) {
+    throw new Error(`Invalid syndicate create payload: ${raw}`);
+  }
+  return { syndicateId: parts[1]! };
+}
+
+export async function redisSyndicateCreate(
+  redis: Redis,
+  keys: {
+    seqKey: string;
+    userSyndicateKey: string;
+    userLevelKey: string;
+    nameIndexKey: string;
+    indexAllKey: string;
+    indexPublicKey: string;
+    idempKey: string;
+  },
+  args: {
+    userId: string;
+    minLevel: number;
+    name: string;
+    description: string;
+    visibility: string;
+    levelPrefMin: number;
+    goldPrefMin: number;
+    nowMs: number;
+    idempTtlSec: number;
+    syndicateKeyPrefix: string;
+  },
+): Promise<SyndicateCreateResult> {
+  if (!syndicateCreateSha) throw new Error("Redis scripts not loaded");
+  try {
+    const res = (await redis.evalsha(
+      syndicateCreateSha,
+      7,
+      keys.seqKey,
+      keys.userSyndicateKey,
+      keys.userLevelKey,
+      keys.nameIndexKey,
+      keys.indexAllKey,
+      keys.indexPublicKey,
+      keys.idempKey,
+      args.userId,
+      String(args.minLevel),
+      args.name,
+      args.description,
+      args.visibility,
+      String(args.levelPrefMin),
+      String(args.goldPrefMin),
+      String(args.nowMs),
+      String(args.idempTtlSec),
+      args.syndicateKeyPrefix,
+    )) as string;
+    return parseSyndicateCreatePayload(res);
+  } catch (e) {
+    if (isReplyError(e) && e.message.includes("NOSCRIPT")) {
+      await loadRedisScripts(redis);
+      return redisSyndicateCreate(redis, keys, args);
+    }
+    throw e;
+  }
+}
+
+export async function redisSyndicateRequestJoin(
+  redis: Redis,
+  keys: {
+    userSyndicateKey: string;
+    metaKey: string;
+    membersKey: string;
+    rolesKey: string;
+    joinReqKey: string;
+    idempKey: string;
+  },
+  args: { userId: string; nowMs: number; idempTtlSec: number },
+): Promise<"OK|JOINED" | "OK|REQUESTED"> {
+  if (!syndicateRequestJoinSha) throw new Error("Redis scripts not loaded");
+  try {
+    const res = (await redis.evalsha(
+      syndicateRequestJoinSha,
+      6,
+      keys.userSyndicateKey,
+      keys.metaKey,
+      keys.membersKey,
+      keys.rolesKey,
+      keys.joinReqKey,
+      keys.idempKey,
+      args.userId,
+      String(args.nowMs),
+      String(args.idempTtlSec),
+    )) as string;
+    if (res === "OK|JOINED" || res === "OK|REQUESTED") return res;
+    throw new Error(`Invalid syndicate request join reply: ${res}`);
+  } catch (e) {
+    if (isReplyError(e) && e.message.includes("NOSCRIPT")) {
+      await loadRedisScripts(redis);
+      return redisSyndicateRequestJoin(redis, keys, args);
+    }
+    throw e;
+  }
+}
+
+export async function redisSyndicateAcceptJoin(
+  redis: Redis,
+  keys: {
+    actorUserSyndicateKey: string;
+    metaKey: string;
+    joinReqKey: string;
+    membersKey: string;
+    rolesKey: string;
+    targetUserSyndicateKey: string;
+    idempKey: string;
+  },
+  args: {
+    actorUserId: string;
+    targetUserId: string;
+    nowMs: number;
+    idempTtlSec: number;
+  },
+): Promise<"OK"> {
+  if (!syndicateAcceptJoinSha) throw new Error("Redis scripts not loaded");
+  try {
+    const res = (await redis.evalsha(
+      syndicateAcceptJoinSha,
+      7,
+      keys.actorUserSyndicateKey,
+      keys.metaKey,
+      keys.joinReqKey,
+      keys.membersKey,
+      keys.rolesKey,
+      keys.targetUserSyndicateKey,
+      keys.idempKey,
+      args.actorUserId,
+      args.targetUserId,
+      String(args.nowMs),
+      String(args.idempTtlSec),
+    )) as string;
+    if (res === "OK") return "OK";
+    throw new Error(`Invalid syndicate accept reply: ${res}`);
+  } catch (e) {
+    if (isReplyError(e) && e.message.includes("NOSCRIPT")) {
+      await loadRedisScripts(redis);
+      return redisSyndicateAcceptJoin(redis, keys, args);
+    }
+    throw e;
+  }
+}
+
+export async function redisSyndicateDeposit(
+  redis: Redis,
+  keys: {
+    userSyndicateKey: string;
+    userWalletKey: string;
+    userInvKey: string;
+    bankGoldKey: string;
+    bankItemsKey: string;
+    contribGoldKey: string;
+    contribItemsKey: string;
+    idempKey: string;
+  },
+  args: {
+    userId: string;
+    syndicateId: string;
+    kind: string;
+    itemId: string;
+    amount: number;
+    nowMs: number;
+    idempTtlSec: number;
+  },
+): Promise<"OK"> {
+  if (!syndicateDepositSha) throw new Error("Redis scripts not loaded");
+  try {
+    const res = (await redis.evalsha(
+      syndicateDepositSha,
+      8,
+      keys.userSyndicateKey,
+      keys.userWalletKey,
+      keys.userInvKey,
+      keys.bankGoldKey,
+      keys.bankItemsKey,
+      keys.contribGoldKey,
+      keys.contribItemsKey,
+      keys.idempKey,
+      args.userId,
+      args.syndicateId,
+      args.kind,
+      args.itemId,
+      String(args.amount),
+      String(args.nowMs),
+      String(args.idempTtlSec),
+    )) as string;
+    if (res === "OK") return "OK";
+    throw new Error(`Invalid syndicate deposit reply: ${res}`);
+  } catch (e) {
+    if (isReplyError(e) && e.message.includes("NOSCRIPT")) {
+      await loadRedisScripts(redis);
+      return redisSyndicateDeposit(redis, keys, args);
+    }
+    throw e;
+  }
+}
+
+export type SyndicateBuyShieldResult = { shieldExpiresAtMs: number };
+
+function parseSyndicateShieldPayload(raw: string): SyndicateBuyShieldResult {
+  const parts = raw.split("|");
+  if (parts[0] !== "OK" || parts.length !== 2) {
+    throw new Error(`Invalid syndicate shield payload: ${raw}`);
+  }
+  return { shieldExpiresAtMs: Number(parts[1]) };
+}
+
+export async function redisSyndicateBuyShield(
+  redis: Redis,
+  keys: {
+    userSyndicateKey: string;
+    bankGoldKey: string;
+    shieldKey: string;
+    idempKey: string;
+  },
+  args: {
+    userId: string;
+    syndicateId: string;
+    goldPaid: number;
+    nowMs: number;
+    idempTtlSec: number;
+  },
+): Promise<SyndicateBuyShieldResult> {
+  if (!syndicateBuyShieldSha) throw new Error("Redis scripts not loaded");
+  const durationMult = 1000; // 1 gold = 1s shield by default (tune later)
+  try {
+    const res = (await redis.evalsha(
+      syndicateBuyShieldSha,
+      4,
+      keys.userSyndicateKey,
+      keys.bankGoldKey,
+      keys.shieldKey,
+      keys.idempKey,
+      args.userId,
+      args.syndicateId,
+      String(args.goldPaid),
+      String(args.nowMs),
+      String(durationMult),
+      String(args.idempTtlSec),
+    )) as string;
+    return parseSyndicateShieldPayload(res);
+  } catch (e) {
+    if (isReplyError(e) && e.message.includes("NOSCRIPT")) {
+      await loadRedisScripts(redis);
+      return redisSyndicateBuyShield(redis, keys, args);
+    }
+    throw e;
+  }
+}
+
+export type SyndicateAttackResult = {
+  lootGold: number;
+  lootItemId: string;
+  lootItemQty: number;
+  shieldExpiresAtMs: number;
+};
+
+function parseSyndicateAttackPayload(raw: string): SyndicateAttackResult {
+  const parts = raw.split("|");
+  if (parts[0] !== "OK" || parts.length !== 5) {
+    throw new Error(`Invalid syndicate attack payload: ${raw}`);
+  }
+  return {
+    lootGold: Number(parts[1]),
+    lootItemId: parts[2] ?? "",
+    lootItemQty: Number(parts[3]),
+    shieldExpiresAtMs: Number(parts[4]),
+  };
+}
+
+export async function redisSyndicateAttack(
+  redis: Redis,
+  keys: {
+    attackerUserSyndicateKey: string;
+    attackerBankGoldKey: string;
+    attackerBankItemsKey: string;
+    targetMetaKey: string;
+    targetBankGoldKey: string;
+    targetBankItemsKey: string;
+    targetShieldKey: string;
+    attackerCooldownKey: string;
+    idempKey: string;
+  },
+  args: {
+    userId: string;
+    attackerSyndicateId: string;
+    targetSyndicateId: string;
+    attackPower: number;
+    lootGoldMax: number;
+    lootItemId: string;
+    lootItemMax: number;
+    nowMs: number;
+    cooldownMs: number;
+    idempTtlSec: number;
+  },
+): Promise<SyndicateAttackResult> {
+  if (!syndicateAttackSha) throw new Error("Redis scripts not loaded");
+  try {
+    const res = (await redis.evalsha(
+      syndicateAttackSha,
+      9,
+      keys.attackerUserSyndicateKey,
+      keys.attackerBankGoldKey,
+      keys.attackerBankItemsKey,
+      keys.targetMetaKey,
+      keys.targetBankGoldKey,
+      keys.targetBankItemsKey,
+      keys.targetShieldKey,
+      keys.attackerCooldownKey,
+      keys.idempKey,
+      args.userId,
+      args.attackerSyndicateId,
+      args.targetSyndicateId,
+      String(args.attackPower),
+      String(args.lootGoldMax),
+      args.lootItemId,
+      String(args.lootItemMax),
+      String(args.nowMs),
+      String(args.cooldownMs),
+      String(args.idempTtlSec),
+    )) as string;
+    return parseSyndicateAttackPayload(res);
+  } catch (e) {
+    if (isReplyError(e) && e.message.includes("NOSCRIPT")) {
+      await loadRedisScripts(redis);
+      return redisSyndicateAttack(redis, keys, args);
+    }
+    throw e;
+  }
+}
+
+export type SyndicateIdolContributeResult = { fulfilled: boolean };
+
+function parseSyndicateIdolPayload(raw: string): SyndicateIdolContributeResult {
+  const parts = raw.split("|");
+  if (parts[0] !== "OK" || parts.length !== 2) {
+    throw new Error(`Invalid syndicate idol payload: ${raw}`);
+  }
+  return { fulfilled: parts[1] === "1" };
+}
+
+export async function redisSyndicateIdolContribute(
+  redis: Redis,
+  keys: {
+    userSyndicateKey: string;
+    bankItemsKey: string;
+    idolReqKey: string;
+    idolKey: string;
+    idempKey: string;
+  },
+  args: {
+    userId: string;
+    syndicateId: string;
+    requestKey: string;
+    itemId: string;
+    amount: number;
+    nowMs: number;
+    idempTtlSec: number;
+  },
+): Promise<SyndicateIdolContributeResult> {
+  if (!syndicateIdolContributeSha) throw new Error("Redis scripts not loaded");
+  try {
+    const res = (await redis.evalsha(
+      syndicateIdolContributeSha,
+      5,
+      keys.userSyndicateKey,
+      keys.bankItemsKey,
+      keys.idolReqKey,
+      keys.idolKey,
+      keys.idempKey,
+      args.userId,
+      args.syndicateId,
+      args.requestKey,
+      args.itemId,
+      String(args.amount),
+      String(args.nowMs),
+      String(args.idempTtlSec),
+    )) as string;
+    return parseSyndicateIdolPayload(res);
+  } catch (e) {
+    if (isReplyError(e) && e.message.includes("NOSCRIPT")) {
+      await loadRedisScripts(redis);
+      return redisSyndicateIdolContribute(redis, keys, args);
+    }
+    throw e;
+  }
+}
+
+export async function redisSyndicateLeaveOrDisband(
+  redis: Redis,
+  keys: {
+    userSyndicateKey: string;
+    nameIndexKey: string;
+    indexAllKey: string;
+    indexPublicKey: string;
+    idempKey: string;
+  },
+  args: {
+    mode: "leave" | "disband";
+    userId: string;
+    syndicateId: string;
+    nowMs: number;
+    idempTtlSec: number;
+  },
+): Promise<"OK"> {
+  if (!syndicateLeaveOrDisbandSha) throw new Error("Redis scripts not loaded");
+  try {
+    const res = (await redis.evalsha(
+      syndicateLeaveOrDisbandSha,
+      5,
+      keys.userSyndicateKey,
+      keys.nameIndexKey,
+      keys.indexAllKey,
+      keys.indexPublicKey,
+      keys.idempKey,
+      args.mode,
+      args.userId,
+      args.syndicateId,
+      String(args.nowMs),
+      String(args.idempTtlSec),
+    )) as string;
+    if (res === "OK") return "OK";
+    throw new Error(`Invalid syndicate leave/disband reply: ${res}`);
+  } catch (e) {
+    if (isReplyError(e) && e.message.includes("NOSCRIPT")) {
+      await loadRedisScripts(redis);
+      return redisSyndicateLeaveOrDisband(redis, keys, args);
     }
     throw e;
   }
