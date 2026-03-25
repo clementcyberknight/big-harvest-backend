@@ -226,3 +226,7 @@ export function syndicateContributionGoldKey(syndicateId: string): string {
 export function syndicateContributionItemsKey(syndicateId: string): string {
   return `ravolo:syndicate:${syndicateId}:contrib_items`;
 }
+
+export function syndicateTaxPenaltyKey(syndicateId: string): string {
+  return `ravolo:syndicate:${syndicateId}:tax_penalty`;
+}

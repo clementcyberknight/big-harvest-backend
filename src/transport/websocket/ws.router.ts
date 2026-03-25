@@ -18,6 +18,8 @@ import { handleLoanOpen, handleLoanRepay } from "./handlers/loan.handler.js";
 import { handleHarvest } from "./handlers/harvest.handler.js";
 import { handlePlant } from "./handlers/plant.handler.js";
 import { handleSell } from "./handlers/sell.handler.js";
+import { handleViewLeaderboard } from "./handlers/leaderboard.handler.js";
+import type { LeaderboardService } from "../../modules/leaderboard/leaderboard.service.js";
 import {
   handleAcceptRequest,
   handleAttackSyndicate,
@@ -49,6 +51,7 @@ export type WsGameContext = {
   crafting: CraftingService;
   userActions: UserActionService;
   syndicates: SyndicateService;
+  leaderboards: LeaderboardService;
 };
 
 export async function dispatchWsMessage(
@@ -151,6 +154,9 @@ export async function dispatchWsMessage(
       return;
     case "VIEW_MEMBER_CONTRIBUTION":
       await handleViewMemberContribution(ws, msg.payload, ctx.syndicates);
+      return;
+    case "VIEW_LEADERBOARD":
+      await handleViewLeaderboard(ws, msg.payload, ctx);
       return;
     default:
       logger.warn({ msg }, "unhandled ws message type");

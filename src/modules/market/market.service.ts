@@ -25,6 +25,9 @@ import type { BuyResult, SellResult } from "./market.types.js";
 import { OnboardingService } from "../onboarding/onboarding.service.js";
 import { redisTreasuryBuy, redisTreasurySell } from "../../infrastructure/redis/commands.js";
 import { IDEMPOTENCY_TTL_SEC } from "../../config/constants.js";
+import { getEventMultiplier } from "../ai-events/event.service.js";
+import { AnalyticsService } from "../analytics/analytics.service.js";
+import { userSyndicateIdKey, syndicateTaxPenaltyKey } from "../../infrastructure/redis/keys.js";
 
 function isReplyError(err: unknown): err is { message: string } {
   return typeof err === "object" && err !== null && "message" in err;
@@ -69,7 +72,21 @@ export class MarketService {
       priceMicro = produceBasePriceMicro(item);
     }
 
-    const goldPaid = sellPayoutGold(priceMicro, quantity);
+    // Apply AI event multiplier
+    const eventMul = await getEventMultiplier(this.redis, item);
+    priceMicro = Math.max(1, Math.round(priceMicro * eventMul));
+
+    let goldPaid = sellPayoutGold(priceMicro, quantity);
+    
+    // Apply wash trade tax penalty if caught
+    const sid = await this.redis.get(userSyndicateIdKey(userId));
+    if (sid) {
+      const penalized = await this.redis.get(syndicateTaxPenaltyKey(sid));
+      if (penalized === "1") {
+        goldPaid = Math.floor(goldPaid * 0.8); // 20% tax cut
+      }
+    }
+
     if (goldPaid < 0) {
       throw new AppError("BAD_REQUEST", "Invalid settlement", { item, quantity });
     }
@@ -136,7 +153,21 @@ export class MarketService {
     let priceMicro = await this.priceMicroFor(item);
     if (priceMicro < 1) priceMicro = entry.basePriceMicro;
 
-    const goldSpent = buyCostGold(priceMicro, quantity);
+    // Apply AI event multiplier
+    const eventMul = await getEventMultiplier(this.redis, item);
+    priceMicro = Math.max(1, Math.round(priceMicro * eventMul));
+
+    let goldSpent = buyCostGold(priceMicro, quantity);
+
+    // Apply wash trade tax penalty if caught
+    const sid = await this.redis.get(userSyndicateIdKey(userId));
+    if (sid) {
+      const penalized = await this.redis.get(syndicateTaxPenaltyKey(sid));
+      if (penalized === "1") {
+        goldSpent = Math.floor(goldSpent * 1.2); // 20% increased cost
+      }
+    }
+
     if (goldSpent < 0) {
       throw new AppError("BAD_REQUEST", "Invalid cost", { item, quantity });
     }

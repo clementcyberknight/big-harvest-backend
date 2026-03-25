@@ -17,8 +17,11 @@
   "author": "clement",
   "license": "ISC",
   "dependencies": {
+    "@ai-sdk/google": "^3.0.53",
+    "@ai-sdk/xai": "^3.0.74",
     "@solana/web3.js": "^1.98.4",
     "@supabase/supabase-js": "^2.100.0",
+    "ai": "^6.0.138",
     "bcrypt": "^6.0.0",
     "bs58": "^6.0.0",
     "bullmq": "^5.71.0",

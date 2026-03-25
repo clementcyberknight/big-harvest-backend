@@ -23,6 +23,11 @@ export function broadcastToSyndicate(
   globalApp.publish(topic, JSON.stringify(message), false);
 }
 
+export function broadcastToAll(message: WsOutboundMessage) {
+  if (!globalApp) return;
+  globalApp.publish("global", JSON.stringify(message), false);
+}
+
 export type ListenToken = unknown;
 
 export type WsAppContext = WsGameContext & AuthHttpDeps;
@@ -86,6 +91,7 @@ export function createWsApp(ctx: WsAppContext) {
     },
     open(ws: WebSocket<WsUserData>) {
       /* userId set in upgrade */
+      ws.subscribe("global");
       void (async () => {
         try {
           const sid = await ctx.syndicates

@@ -27,6 +27,10 @@ const schema = z.object({
   USER_ACTIONS_POLL_MS: z.coerce.number().int().nonnegative().default(200),
   /** Drop oversized queue entries on enqueue (bytes UTF-8). */
   USER_ACTIONS_MAX_LINE_BYTES: z.coerce.number().int().positive().default(65536),
+  /** xAI Grok API key for AI event generation. Optional — engine skips if absent. */
+  XAI_API_KEY: z.string().optional(),
+  /** Google Gemini API key for primary AI event generation. */
+  GOOGLE_GENERATIVE_AI_API_KEY: z.string().optional(),
 });
 
 export type Env = z.infer<typeof schema>;
@@ -46,4 +50,6 @@ export const env: Env = schema.parse({
   USER_ACTIONS_BATCH_SIZE: process.env.USER_ACTIONS_BATCH_SIZE,
   USER_ACTIONS_POLL_MS: process.env.USER_ACTIONS_POLL_MS,
   USER_ACTIONS_MAX_LINE_BYTES: process.env.USER_ACTIONS_MAX_LINE_BYTES,
+  XAI_API_KEY: process.env.XAI_API_KEY,
+  GOOGLE_GENERATIVE_AI_API_KEY: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
 });

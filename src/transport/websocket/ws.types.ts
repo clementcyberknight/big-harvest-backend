@@ -29,6 +29,7 @@ export type WsInboundMessage =
   | { type: "VIEW_GOLD_BANK"; payload: unknown }
   | { type: "VIEW_COMMODITY_BANK"; payload: unknown }
   | { type: "VIEW_MEMBER_CONTRIBUTION"; payload: unknown }
+  | { type: "VIEW_LEADERBOARD"; payload: unknown }
   | { type: "PING"; payload?: unknown };
 
 export type WsOutboundMessage =
@@ -59,6 +60,8 @@ export type WsOutboundMessage =
   | { type: "VIEW_GOLD_BANK_OK"; data: unknown }
   | { type: "VIEW_COMMODITY_BANK_OK"; data: unknown }
   | { type: "VIEW_MEMBER_CONTRIBUTION_OK"; data: unknown }
+  | { type: "VIEW_LEADERBOARD_OK"; data: unknown }
+  | { type: "AI_EVENT"; data: unknown }
   | { type: "SYNDICATE_IDOL_EVENT"; data: unknown }
   | { type: "ERROR"; code: string; message: string; details?: unknown }
   | { type: "PONG" };

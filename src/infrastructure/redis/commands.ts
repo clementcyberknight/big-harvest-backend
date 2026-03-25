@@ -49,6 +49,7 @@ let syndicateBuyShieldSha: string | null = null;
 let syndicateAttackSha: string | null = null;
 let syndicateIdolContributeSha: string | null = null;
 let syndicateLeaveOrDisbandSha: string | null = null;
+let decaySha: string | null = null;
 
 export async function loadRedisScripts(redis: Redis): Promise<void> {
   const plantSrc = readFileSync(resolveLuaFile("plant.lua"), "utf8");
@@ -97,6 +98,7 @@ export async function loadRedisScripts(redis: Redis): Promise<void> {
     resolveLuaFile("syndicateLeaveOrDisband.lua"),
     "utf8",
   );
+  const decaySrc = readFileSync(resolveLuaFile("decay.lua"), "utf8");
 
   plantSha = (await redis.script("LOAD", plantSrc)) as string;
   harvestSha = (await redis.script("LOAD", harvestSrc)) as string;
@@ -141,6 +143,7 @@ export async function loadRedisScripts(redis: Redis): Promise<void> {
     "LOAD",
     syndicateLeaveOrDisbandSrc,
   )) as string;
+  decaySha = (await redis.script("LOAD", decaySrc)) as string;
 }
 
 export type PlantScriptResult =
@@ -1241,6 +1244,30 @@ export async function redisSyndicateLeaveOrDisband(
     if (isReplyError(e) && e.message.includes("NOSCRIPT")) {
       await loadRedisScripts(redis);
       return redisSyndicateLeaveOrDisband(redis, keys, args);
+    }
+    throw e;
+  }
+}
+
+export async function redisDecay(
+  redis: Redis,
+  plotKey: string,
+  currentTimeMs: number,
+  maxDecayMs: number,
+): Promise<"NO_CROP" | "NOT_READY" | "DECAYED" | "SAFE"> {
+  if (!decaySha) throw new Error("Redis scripts not loaded");
+  try {
+    return (await redis.evalsha(
+      decaySha,
+      1,
+      plotKey,
+      String(currentTimeMs),
+      String(maxDecayMs),
+    )) as "NO_CROP" | "NOT_READY" | "DECAYED" | "SAFE";
+  } catch (e) {
+    if (isReplyError(e) && e.message.includes("NOSCRIPT")) {
+      await loadRedisScripts(redis);
+      return redisDecay(redis, plotKey, currentTimeMs, maxDecayMs);
     }
     throw e;
   }

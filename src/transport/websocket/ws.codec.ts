@@ -7,7 +7,7 @@ import type {
 } from "./ws.types.js";
 
 /**
- * Binary MessagePack for the WebSocket hot path (AGENTS.md).
+ * Binary MessagePack for the WebSocket hot path.
  * Outbound is always msgpack binary frames; inbound accepts msgpack binary or UTF-8 JSON (dev/tools).
  */
 const packr = new Packr({
@@ -56,7 +56,12 @@ function normalizeInbound(o: unknown): WsInboundMessage | null {
     type === "SYNDICATE_CHAT_SEND" ||
     type === "SYNDICATE_CHAT_LIST" ||
     type === "LEAVE_SYNDICATE" ||
-    type === "DISBAND_SYNDICATE"
+    type === "DISBAND_SYNDICATE" ||
+    type === "VIEW_SYNDICATE_MEMBER" ||
+    type === "VIEW_GOLD_BANK" ||
+    type === "VIEW_COMMODITY_BANK" ||
+    type === "VIEW_MEMBER_CONTRIBUTION" ||
+    type === "VIEW_LEADERBOARD"
   ) {
     return { type, payload: rec.payload } as WsInboundMessage;
   }

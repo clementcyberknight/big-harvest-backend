@@ -15,13 +15,16 @@ import { ProfileService } from "./modules/profile/profile.service.js";
 import { SyndicateService } from "./modules/syndicate/syndicate.service.js";
 import { UserActionService } from "./modules/user-actions/userAction.service.js";
 import {
+  broadcastToAll,
   createWsApp,
   listenGameWs,
   type ListenToken,
   type WsAppContext,
 } from "./transport/websocket/ws.server.js";
-import { runPricingTick, startPricingLoop } from "./workers/pricing.worker.js";
-import { startIdolRequestLoop } from "./workers/idolRequest.worker.js";
+import { runPricingTick } from "./workers/pricing.worker.js";
+import { setAiEventBroadcaster } from "./workers/aiEvent.worker.js";
+import { LeaderboardService } from "./modules/leaderboard/leaderboard.service.js";
+import { SchedulerService } from "./modules/scheduler/scheduler.service.js";
 import {
   flushUserActionsQueueToSupabase,
   startUserActionsFlushWorker,
@@ -44,8 +47,6 @@ export async function startApp(): Promise<AppInstance> {
 
   await loadRedisScripts(redis);
   await runPricingTick(redis);
-  const stopPricing = startPricingLoop(redis);
-  const stopIdol = startIdolRequestLoop(redis);
 
   const market = new MarketService(redis);
   const loan = new LoanService(redis);
@@ -56,6 +57,8 @@ export async function startApp(): Promise<AppInstance> {
   const userActions = new UserActionService(redis);
   const stopUserActionsWorker = startUserActionsFlushWorker(redis);
   const syndicates = new SyndicateService(redis);
+  const leaderboards = new LeaderboardService(redis);
+  const scheduler = new SchedulerService(redis);
 
   const ctx: WsAppContext = {
     planting: new PlantingService(redis),
@@ -66,26 +69,34 @@ export async function startApp(): Promise<AppInstance> {
     crafting,
     userActions,
     syndicates,
+    leaderboards,
     auth,
     profile,
   };
 
   const uws = createWsApp(ctx);
   const listenToken = await listenGameWs(uws, env.WS_PORT);
+
+  // Start the centralized scheduler engine
+  scheduler.startAll();
+
+  // Set up AI event broadcaster to push to all connected WS clients
+  setAiEventBroadcaster((event) => {
+    broadcastToAll({ type: "AI_EVENT", data: event });
+  });
+
   logger.info({ port: env.WS_PORT }, "game services bound");
 
   return {
     ctx,
     listenToken,
     close: () => {
-      stopPricing();
-      stopIdol();
+      scheduler.stopAll();
       us_listen_socket_close(listenToken as never);
       uws.close();
     },
     disposeAsync: async () => {
-      stopPricing();
-      stopIdol();
+      scheduler.stopAll();
       await stopUserActionsWorker();
       us_listen_socket_close(listenToken as never);
       uws.close();
