@@ -180,15 +180,16 @@ export async function generateAiEvent(
     situationContext += `\nGOLD EXCESS — Treasury reserve is at ${context.goldBalance.reservePct.toFixed(0)}%. Generate a "crash" event to encourage buying from treasury, draining excess gold from the economy.\n`;
   }
 
-  if (context.anomalies && context.anomalies.length > 0) {
-    const aiAnomalies = context.anomalies.filter(a => a.type !== "wash_trading");
-    if (aiAnomalies.length > 0) {
-      const anomalyDetails = aiAnomalies
-        .map((a) => `  - ${a.type.toUpperCase()}: ${a.description}`)
-        .join("\n");
-      situationContext += `\nMARKET ABUSE DETECTED — Organized manipulation spotted:\n${anomalyDetails}\n\nYou MUST punish the abusers by generating a punishing event targeting the involved commodities. Create a "crash" or "boycott" event to wipe out their value.\n`;
-    }
-  }
+  // need to monitor the situation before i implement this
+  // if (context.anomalies && context.anomalies.length > 0) {
+  //   const aiAnomalies = context.anomalies.filter(a => a.type !== "wash_trading");
+  //   if (aiAnomalies.length > 0) {
+  //     const anomalyDetails = aiAnomalies
+  //       .map((a) => `  - ${a.type.toUpperCase()}: ${a.description}`)
+  //       .join("\n");
+  //     situationContext += `\nMARKET ABUSE DETECTED — Organized manipulation spotted:\n${anomalyDetails}\n\nYou MUST punish the abusers by generating a punishing event targeting the involved commodities. Create a "crash" or "boycott" event to wipe out their value.\n`;
+  //   }
+  // }
 
   let objectResult;
   const aiPrompt = `You are the game master for a dramatic farming simulation game called Ravolo.
