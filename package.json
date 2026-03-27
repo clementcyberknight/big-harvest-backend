@@ -37,7 +37,7 @@
     "rate-limiter-flexible": "^10.0.1",
     "simple-statistics": "^7.8.9",
     "tweetnacl": "^1.0.3",
-    "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.59.0",
+    "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.61.0",
     "unique-username-generator": "^1.5.1",
     "uuid": "^13.0.0",
     "zod": "^4.3.6"
