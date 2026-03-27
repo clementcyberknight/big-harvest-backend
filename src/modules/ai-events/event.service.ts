@@ -1,6 +1,5 @@
 import type { Redis } from "ioredis";
 import { createXai } from "@ai-sdk/xai";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { generateObject } from "ai";
 import { z } from "zod";
 import { env } from "../../config/env.js";
@@ -143,9 +142,9 @@ export async function generateAiEvent(
   trigger: MarketEventTrigger,
   context: AiEventContext,
 ): Promise<MarketEvent | null> {
-  if (!env.XAI_API_KEY && !env.GOOGLE_GENERATIVE_AI_API_KEY) {
+  if (!env.XAI_API_KEY) {
     logger.warn(
-      "[ai-events] Neither GOOGLE_GENERATIVE_AI_API_KEY nor XAI_API_KEY set — skipping AI event generation",
+      "[ai-events] XAI_API_KEY not set — skipping AI event generation",
     );
     return null;
   }
@@ -212,49 +211,17 @@ Multiplier rules:
 Be creative, dramatic, and season-appropriate. Vary between all three outcome types.`;
 
   try {
-    if (!env.GOOGLE_GENERATIVE_AI_API_KEY) {
-      throw new Error("No Gemini API key available, defaulting to Grok");
-    }
-    const google = createGoogleGenerativeAI({
-      apiKey: env.GOOGLE_GENERATIVE_AI_API_KEY,
-    });
+    const xai = createXai({ apiKey: env.XAI_API_KEY });
     const { object } = await generateObject({
-      model: google("gemini-3.0-flash"),
+      model: xai("grok-4-1-fast-reasoning"),
       schema: marketEventSchema,
       prompt: aiPrompt,
     });
     objectResult = object;
-    logger.info(
-      "[ai-events] Successfully generated event using Gemini 2.5 Flash",
-    );
+    logger.info("[ai-events] Successfully generated event using Grok 3 Mini");
   } catch (err) {
-    if (env.XAI_API_KEY) {
-      logger.warn(
-        { err },
-        "[ai-events] Gemini generation failed, falling back to Grok (xAI) ...",
-      );
-      try {
-        const xai = createXai({ apiKey: env.XAI_API_KEY });
-        const { object } = await generateObject({
-          model: xai("grok-3-mini"),
-          schema: marketEventSchema,
-          prompt: aiPrompt,
-        });
-        objectResult = object;
-        logger.info(
-          "[ai-events] Successfully generated event using Grok 3 Mini fallback",
-        );
-      } catch (grokErr) {
-        logger.error({ grokErr }, "[ai-events] Fallback to Grok failed.");
-        return null;
-      }
-    } else {
-      logger.error(
-        { err },
-        "[ai-events] Gemini generation failed and no Grok API key available for fallback.",
-      );
-      return null;
-    }
+    logger.error({ err }, "[ai-events] Grok event generation failed");
+    return null;
   }
 
   const validAffect = objectResult.affect.filter((id) => validIds.has(id));
