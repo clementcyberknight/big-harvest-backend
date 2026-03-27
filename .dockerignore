@@ -1,0 +1,33 @@
+node_modules/
+dist/
+.git/
+.gitignore
+
+# Environment (secrets injected at runtime, never baked)
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+.vscode/
+.idea/
+*.sublime-*
+.DS_Store
+Thumbs.db
+
+# Logs & caches
+*.log
+npm-debug.log*
+pnpm-debug.log*
+.eslintcache
+*.tscache
+*.tsbuildinfo
+coverage/
+
+# Redis local data
+dump.rdb
+appendonly.aof
+
+# Docs
+*.md
+!AGENTS.md
