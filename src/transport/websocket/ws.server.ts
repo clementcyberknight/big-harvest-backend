@@ -44,7 +44,7 @@ export function createWsApp(ctx: WsAppContext) {
   });
   registerCatalogHttp(app);
 
-  return app.ws<WsUserData>("/*", {
+  return app.ws<WsUserData>("/ws", {
     compression: DISABLED,
     idleTimeout: 120,
     maxPayloadLength: 16 * 1024,
@@ -141,10 +141,11 @@ export function listenGameWs(
   return new Promise((resolve, reject) => {
     app.listen(port, (token) => {
       if (!token) {
+        logger.fatal({ port }, "uWS failed to bind — port in use or permission denied");
         reject(new Error(`Failed to listen on port ${port}`));
         return;
       }
-      logger.info({ port }, "WebSocket server listening");
+      logger.info({ port }, "uWS server listening (HTTP + WS)");
       resolve(token);
     });
   });

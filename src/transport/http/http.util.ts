@@ -53,7 +53,6 @@ export function sendJson(
 ): void {
   const payload = JSON.stringify(body);
   res.cork(() => {
-    applyCors(res);
     res.writeStatus(status);
     res.writeHeader("Content-Type", "application/json; charset=utf-8");
     res.end(payload);
@@ -62,7 +61,6 @@ export function sendJson(
 
 export function sendText(res: HttpResponse, status: string, text: string): void {
   res.cork(() => {
-    applyCors(res);
     res.writeStatus(status);
     res.writeHeader("Content-Type", "text/plain; charset=utf-8");
     res.end(text);
