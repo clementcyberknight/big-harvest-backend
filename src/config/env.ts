@@ -6,8 +6,10 @@ const schema = z.object({
     .enum(["development", "test", "production"])
     .default("development"),
   REDIS_URL: z.string().min(1, "REDIS_URL is required"),
-  // Railway (and most PaaS) injects PORT. Fall back to WS_PORT, then 9001.
-  PORT: z.coerce.number().int().positive().optional(),
+  // The port the uWS server binds to. Set this explicitly; do NOT rely on
+  // Railway's injected PORT variable — it maps to the internal port Railway
+  // chooses, which may differ from the "Internal Port" you set in Public
+  // Networking. Always set WS_PORT to match that Internal Port value.
   WS_PORT: z.coerce.number().int().positive().default(9001),
   SUPABASE_URL: z.string().url("SUPABASE_URL must be a valid URL"),
   SUPABASE_SERVICE_ROLE_KEY: z
@@ -40,7 +42,6 @@ export type Env = z.infer<typeof schema>;
 export const env: Env = schema.parse({
   NODE_ENV: process.env.NODE_ENV,
   REDIS_URL: process.env.REDIS_URL,
-  PORT: process.env.PORT,
   WS_PORT: process.env.WS_PORT,
   SUPABASE_URL: process.env.SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
