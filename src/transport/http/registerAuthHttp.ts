@@ -58,12 +58,19 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
   });
 
   app.get("/auth/challenge", (res) => {
+    let aborted = false;
+    res.onAborted(() => {
+      aborted = true;
+      logger.warn("GET /auth/challenge aborted by client");
+    });
     applyCors(res);
     void (async () => {
       try {
         const challenge = await deps.auth.createChallenge();
+        if (aborted) return;
         sendJson(res, "200 OK", challenge);
       } catch (e) {
+        if (aborted) return;
         logger.error({ err: e }, "GET /auth/challenge failed");
         const msg = e instanceof Error ? e.message : "Internal error";
         sendJson(res, "500 Internal Server Error", { error: msg });
@@ -72,10 +79,15 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
   });
 
   app.post("/auth/verify", (res, req) => {
+    let aborted = false;
+    res.onAborted(() => {
+      aborted = true;
+      logger.warn("POST /auth/verify aborted by client");
+    });
     applyCors(res);
     void (async () => {
       const raw = await readRequestBody(res);
-      if (raw === null) return;
+      if (raw === null || aborted) return;
 
       let body: {
         wallet?: string;
@@ -142,10 +154,15 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
   });
 
   app.post("/auth/refresh", (res, req) => {
+    let aborted = false;
+    res.onAborted(() => {
+      aborted = true;
+      logger.warn("POST /auth/refresh aborted by client");
+    });
     applyCors(res);
     void (async () => {
       const raw = await readRequestBody(res);
-      if (raw === null) return;
+      if (raw === null || aborted) return;
 
       let body: { refreshToken?: string };
       try {
@@ -197,10 +214,14 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
   });
 
   app.post("/auth/logout", (res, req) => {
+    let aborted = false;
+    res.onAborted(() => {
+      aborted = true;
+    });
     applyCors(res);
     void (async () => {
       const raw = await readRequestBody(res);
-      if (raw === null) return;
+      if (raw === null || aborted) return;
 
       let body: { refreshToken?: string };
       try {
@@ -220,9 +241,15 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
   });
 
   app.patch("/profile/username", (res, req) => {
+    let aborted = false;
+    res.onAborted(() => {
+      aborted = true;
+      logger.warn("PATCH /profile/username aborted by client");
+    });
+    // Read synchronous req values BEFORE any async work
+    const token = parseBearer(req);
     applyCors(res);
     void (async () => {
-      const token = parseBearer(req);
       if (!token) {
         sendJson(res, "401 Unauthorized", { error: "Missing bearer token" });
         return;
@@ -235,7 +262,7 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
       }
 
       const raw = await readRequestBody(res);
-      if (raw === null) return;
+      if (raw === null || aborted) return;
 
       let body: { username?: string };
       try {

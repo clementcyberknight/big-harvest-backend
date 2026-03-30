@@ -77,6 +77,7 @@ export async function startApp(): Promise<AppInstance> {
   const uws = createWsApp(ctx);
   // Railway injects PORT; fall back to WS_PORT for local/self-hosted deploys.
   const listenPort = env.PORT ?? env.WS_PORT;
+  logger.info({ port: listenPort, NODE_ENV: env.NODE_ENV }, "binding uWS server");
   const listenToken = await listenGameWs(uws, listenPort);
 
   // Start the centralized scheduler engine
