@@ -6,6 +6,10 @@ const schema = z.object({
     .enum(["development", "test", "production"])
     .default("development"),
   REDIS_URL: z.string().min(1, "REDIS_URL is required"),
+  // The port the uWS server binds to. Set this explicitly; do NOT rely on
+  // Railway's injected PORT variable — it maps to the internal port Railway
+  // chooses, which may differ from the "Internal Port" you set in Public
+  // Networking. Always set WS_PORT to match that Internal Port value.
   WS_PORT: z.coerce.number().int().positive().default(9001),
   SUPABASE_URL: z.string().url("SUPABASE_URL must be a valid URL"),
   SUPABASE_SERVICE_ROLE_KEY: z

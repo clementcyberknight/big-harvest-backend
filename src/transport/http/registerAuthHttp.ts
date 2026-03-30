@@ -15,6 +15,7 @@ import {
   sendJson,
   sendText,
 } from "./http.util.js";
+import { logger } from "../../infrastructure/logger/logger.js";
 
 export type AuthHttpDeps = {
   auth: AuthService;
@@ -51,29 +52,53 @@ function parseBearer(req: HttpRequest): string | null {
 
 export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
   app.options("/*", (res) => {
+    res.onAborted(() => {});
     applyCors(res);
-    res.writeStatus("204 No Content");
-    res.end();
+    res.cork(() => {
+      res.writeStatus("204 No Content");
+      res.end();
+    });
   });
 
   app.get("/auth/challenge", (res) => {
-    applyCors(res);
-    void (async () => {
+    let aborted = false;
+    res.onAborted(() => {
+      aborted = true;
+      logger.warn("GET /auth/challenge aborted by client");
+    });
+    (async (): Promise<void> => {
       try {
         const challenge = await deps.auth.createChallenge();
+        if (aborted) return;
+        applyCors(res);
         sendJson(res, "200 OK", challenge);
       } catch (e) {
+        if (aborted) return;
+        logger.error({ err: e }, "GET /auth/challenge failed");
         const msg = e instanceof Error ? e.message : "Internal error";
+        applyCors(res);
         sendJson(res, "500 Internal Server Error", { error: msg });
       }
-    })();
+    })().catch((e) => {
+      logger.error({ err: e }, "GET /auth/challenge unhandled rejection");
+      if (!aborted) {
+        try {
+          applyCors(res);
+          sendJson(res, "500 Internal Server Error", { error: "Internal error" });
+        } catch {}
+      }
+    });
   });
 
   app.post("/auth/verify", (res, req) => {
-    applyCors(res);
-    void (async () => {
+    let aborted = false;
+    res.onAborted(() => {
+      aborted = true;
+      logger.warn("POST /auth/verify aborted by client");
+    });
+    (async (): Promise<void> => {
       const raw = await readRequestBody(res);
-      if (raw === null) return;
+      if (raw === null || aborted) return;
 
       let body: {
         wallet?: string;
@@ -83,6 +108,7 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
       try {
         body = JSON.parse(raw) as typeof body;
       } catch {
+        applyCors(res);
         sendJson(res, "400 Bad Request", { error: "Invalid JSON" });
         return;
       }
@@ -94,6 +120,7 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
         typeof body.challengeId === "string" ? body.challengeId.trim() : "";
 
       if (!wallet || !signature || !challengeId) {
+        applyCors(res);
         sendJson(res, "400 Bad Request", {
           error: "wallet, signature, and challengeId are required",
         });
@@ -110,6 +137,7 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
           isNewUser: result.isNewUser,
         });
         const accessExp = accessTokenExpUnix(result.accessToken);
+        applyCors(res);
         sendJson(res, "200 OK", {
           accessToken: result.accessToken,
           refreshToken: result.refreshToken,
@@ -126,6 +154,8 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
           isNewUser: result.isNewUser,
         });
       } catch (e) {
+        if (aborted) return;
+        applyCors(res);
         if (e instanceof AppError) {
           sendJson(res, httpStatusForAppError(e.code), {
             error: e.code,
@@ -133,21 +163,35 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
           });
           return;
         }
+        logger.error({ err: e }, "POST /auth/verify failed");
         sendJson(res, "500 Internal Server Error", { error: "Internal error" });
       }
-    })();
+    })().catch((e) => {
+      logger.error({ err: e }, "POST /auth/verify unhandled rejection");
+      if (!aborted) {
+        try {
+          applyCors(res);
+          sendJson(res, "500 Internal Server Error", { error: "Internal error" });
+        } catch {}
+      }
+    });
   });
 
   app.post("/auth/refresh", (res, req) => {
-    applyCors(res);
-    void (async () => {
+    let aborted = false;
+    res.onAborted(() => {
+      aborted = true;
+      logger.warn("POST /auth/refresh aborted by client");
+    });
+    (async (): Promise<void> => {
       const raw = await readRequestBody(res);
-      if (raw === null) return;
+      if (raw === null || aborted) return;
 
       let body: { refreshToken?: string };
       try {
         body = JSON.parse(raw) as typeof body;
       } catch {
+        applyCors(res);
         sendJson(res, "400 Bad Request", { error: "Invalid JSON" });
         return;
       }
@@ -155,6 +199,7 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
       const rt =
         typeof body.refreshToken === "string" ? body.refreshToken.trim() : "";
       if (!rt) {
+        applyCors(res);
         sendJson(res, "400 Bad Request", {
           error: "refreshToken is required",
         });
@@ -165,6 +210,7 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
         const session = await deps.auth.refreshSession(rt);
         void deps.userActions.log(session.profile.id, "AUTH_REFRESH", {});
         const accessExp = accessTokenExpUnix(session.accessToken);
+        applyCors(res);
         sendJson(res, "200 OK", {
           accessToken: session.accessToken,
           refreshToken: session.refreshToken,
@@ -180,6 +226,8 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
           },
         });
       } catch (e) {
+        if (aborted) return;
+        applyCors(res);
         if (e instanceof AppError) {
           sendJson(res, httpStatusForAppError(e.code), {
             error: e.code,
@@ -187,21 +235,34 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
           });
           return;
         }
+        logger.error({ err: e }, "POST /auth/refresh failed");
         sendJson(res, "500 Internal Server Error", { error: "Internal error" });
       }
-    })();
+    })().catch((e) => {
+      logger.error({ err: e }, "POST /auth/refresh unhandled rejection");
+      if (!aborted) {
+        try {
+          applyCors(res);
+          sendJson(res, "500 Internal Server Error", { error: "Internal error" });
+        } catch {}
+      }
+    });
   });
 
   app.post("/auth/logout", (res, req) => {
-    applyCors(res);
-    void (async () => {
+    let aborted = false;
+    res.onAborted(() => {
+      aborted = true;
+    });
+    (async (): Promise<void> => {
       const raw = await readRequestBody(res);
-      if (raw === null) return;
+      if (raw === null || aborted) return;
 
       let body: { refreshToken?: string };
       try {
         body = JSON.parse(raw) as typeof body;
       } catch {
+        applyCors(res);
         sendJson(res, "400 Bad Request", { error: "Invalid JSON" });
         return;
       }
@@ -211,38 +272,57 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
       if (rt) {
         await deps.auth.revokeRefreshToken(rt);
       }
+      if (aborted) return;
+      applyCors(res);
       sendJson(res, "200 OK", { ok: true });
-    })();
+    })().catch((e) => {
+      logger.error({ err: e }, "POST /auth/logout unhandled rejection");
+      if (!aborted) {
+        try {
+          applyCors(res);
+          sendJson(res, "500 Internal Server Error", { error: "Internal error" });
+        } catch {}
+      }
+    });
   });
 
   app.patch("/profile/username", (res, req) => {
-    applyCors(res);
-    void (async () => {
-      const token = parseBearer(req);
+    let aborted = false;
+    res.onAborted(() => {
+      aborted = true;
+      logger.warn("PATCH /profile/username aborted by client");
+    });
+    // Read synchronous req values BEFORE any async work
+    const token = parseBearer(req);
+    (async (): Promise<void> => {
       if (!token) {
+        applyCors(res);
         sendJson(res, "401 Unauthorized", { error: "Missing bearer token" });
         return;
       }
 
       const payload = verifyAccessToken(token);
       if (!payload) {
+        applyCors(res);
         sendJson(res, "401 Unauthorized", { error: "Invalid or expired token" });
         return;
       }
 
       const raw = await readRequestBody(res);
-      if (raw === null) return;
+      if (raw === null || aborted) return;
 
       let body: { username?: string };
       try {
         body = JSON.parse(raw) as typeof body;
       } catch {
+        applyCors(res);
         sendJson(res, "400 Bad Request", { error: "Invalid JSON" });
         return;
       }
 
       const parsed = usernameUpdateSchema.safeParse(body.username);
       if (!parsed.success) {
+        applyCors(res);
         sendJson(res, "400 Bad Request", {
           error: "BAD_REQUEST",
           message: parsed.error.issues[0]?.message ?? "Invalid username",
@@ -258,6 +338,7 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
         void deps.userActions.log(payload.sub, "PROFILE_SET_USERNAME", {
           username: profile.username,
         });
+        applyCors(res);
         sendJson(res, "200 OK", {
           profile: {
             id: profile.id,
@@ -268,6 +349,8 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
           },
         });
       } catch (e) {
+        if (aborted) return;
+        applyCors(res);
         if (e instanceof AppError) {
           sendJson(res, httpStatusForAppError(e.code), {
             error: e.code,
@@ -275,12 +358,22 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
           });
           return;
         }
+        logger.error({ err: e }, "PATCH /profile/username failed");
         sendJson(res, "500 Internal Server Error", { error: "Internal error" });
       }
-    })();
+    })().catch((e) => {
+      logger.error({ err: e }, "PATCH /profile/username unhandled rejection");
+      if (!aborted) {
+        try {
+          applyCors(res);
+          sendJson(res, "500 Internal Server Error", { error: "Internal error" });
+        } catch {}
+      }
+    });
   });
 
   app.get("/health", (res) => {
+    res.onAborted(() => {});
     sendText(res, "200 OK", "ok");
   });
 }

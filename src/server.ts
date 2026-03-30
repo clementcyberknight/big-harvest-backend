@@ -2,7 +2,24 @@ import { startApp } from "./app.js";
 import { closeRedis } from "./infrastructure/redis/client.js";
 import { logger } from "./infrastructure/logger/logger.js";
 
-const app = await startApp();
+process.on("uncaughtException", (err) => {
+  logger.fatal({ err }, "uncaughtException — process will exit");
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason) => {
+  logger.fatal({ reason }, "unhandledRejection — process will exit");
+  process.exit(1);
+});
+
+let app: Awaited<ReturnType<typeof startApp>>;
+try {
+  app = await startApp();
+} catch (err) {
+  logger.fatal({ err }, "startApp failed — exiting");
+  process.exit(1);
+}
+
 logger.info("Ravolo game server ready");
 
 async function shutdown(signal: string) {

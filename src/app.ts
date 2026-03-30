@@ -75,7 +75,11 @@ export async function startApp(): Promise<AppInstance> {
   };
 
   const uws = createWsApp(ctx);
-  const listenToken = await listenGameWs(uws, env.WS_PORT);
+  // Always bind to WS_PORT. Set this to match the "Internal Port" value in
+  // Railway Public Networking. Do NOT rely on Railway's injected PORT variable.
+  const listenPort = env.WS_PORT;
+  logger.info({ port: listenPort, NODE_ENV: env.NODE_ENV }, "binding uWS server");
+  const listenToken = await listenGameWs(uws, listenPort);
 
   // Start the centralized scheduler engine
   scheduler.startAll();
@@ -85,7 +89,7 @@ export async function startApp(): Promise<AppInstance> {
     broadcastToAll({ type: "AI_EVENT", data: event });
   });
 
-  logger.info({ port: env.WS_PORT }, "game services bound");
+  logger.info({ port: listenPort }, "game services bound");
 
   return {
     ctx,

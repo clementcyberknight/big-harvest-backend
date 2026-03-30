@@ -139,10 +139,11 @@ export function listenGameWs(
   return new Promise((resolve, reject) => {
     app.listen(port, (token) => {
       if (!token) {
+        logger.fatal({ port }, "uWS failed to bind — port in use or permission denied");
         reject(new Error(`Failed to listen on port ${port}`));
         return;
       }
-      logger.info({ port }, "WebSocket server listening");
+      logger.info({ port }, "uWS server listening (HTTP + WS)");
       resolve(token);
     });
   });
