@@ -7,6 +7,7 @@ import { logger } from "./infrastructure/logger/logger.js";
 import { AuthService } from "./modules/auth/auth.service.js";
 import { AnimalService } from "./modules/animal/animal.service.js";
 import { CraftingService } from "./modules/crafting/crafting.service.js";
+import { OnboardingService } from "./modules/onboarding/onboarding.service.js";
 import { HarvestingService } from "./modules/harvesting/harvesting.service.js";
 import { LoanService } from "./modules/loan/loan.service.js";
 import { MarketService } from "./modules/market/market.service.js";
@@ -53,7 +54,8 @@ export async function startApp(): Promise<AppInstance> {
   const animals = new AnimalService(redis);
   const crafting = new CraftingService(redis);
   const profile = new ProfileService();
-  const auth = new AuthService(redis, profile);
+  const onboarding = new OnboardingService(redis);
+  const auth = new AuthService(redis, profile, onboarding);
   const userActions = new UserActionService(redis);
   const stopUserActionsWorker = startUserActionsFlushWorker(redis);
   const syndicates = new SyndicateService(redis);

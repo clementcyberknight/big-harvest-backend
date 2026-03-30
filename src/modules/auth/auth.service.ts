@@ -4,6 +4,7 @@ import { env } from "../../config/env.js";
 import { authChallengeKey } from "../../infrastructure/redis/keys.js";
 import { AppError } from "../../shared/errors/appError.js";
 import type { ProfileService } from "../profile/profile.service.js";
+import type { OnboardingService } from "../onboarding/onboarding.service.js";
 import { signAccessToken } from "./jwt.js";
 import { mintRefreshToken, redeemRefreshToken } from "./refreshToken.redis.js";
 import { verifySolanaSignature } from "./solana.js";
@@ -29,6 +30,7 @@ export class AuthService {
   constructor(
     private readonly redis: Redis,
     private readonly profiles: ProfileService,
+    private readonly onboarding: OnboardingService,
   ) {
     this.refreshTtlSec = env.REFRESH_TOKEN_TTL_DAYS * 86_400;
   }
@@ -78,6 +80,7 @@ export class AuthService {
     if (!profile) {
       profile = await this.profiles.createFarmerProfile(walletAddress);
       isNewUser = true;
+      await this.onboarding.ensureOnboarded(profile.id);
     }
 
     const accessToken = signAccessToken(profile.id, walletAddress);

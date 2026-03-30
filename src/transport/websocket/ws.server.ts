@@ -7,6 +7,7 @@ import {
   registerAuthHttp,
   type AuthHttpDeps,
 } from "../http/registerAuthHttp.js";
+import { registerCatalogHttp } from "../http/registerCatalogHttp.js";
 import { sendGameMessage } from "./ws.codec.js";
 import { dispatchWsMessage, type WsGameContext } from "./ws.router.js";
 import type { WsOutboundMessage, WsUserData } from "./ws.types.js";
@@ -41,6 +42,7 @@ export function createWsApp(ctx: WsAppContext) {
     profile: ctx.profile,
     userActions: ctx.userActions,
   });
+  registerCatalogHttp(app);
 
   return app.ws<WsUserData>("/*", {
     compression: DISABLED,
