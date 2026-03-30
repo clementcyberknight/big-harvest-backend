@@ -75,7 +75,9 @@ export async function startApp(): Promise<AppInstance> {
   };
 
   const uws = createWsApp(ctx);
-  const listenToken = await listenGameWs(uws, env.WS_PORT);
+  // Railway injects PORT; fall back to WS_PORT for local/self-hosted deploys.
+  const listenPort = env.PORT ?? env.WS_PORT;
+  const listenToken = await listenGameWs(uws, listenPort);
 
   // Start the centralized scheduler engine
   scheduler.startAll();
@@ -85,7 +87,7 @@ export async function startApp(): Promise<AppInstance> {
     broadcastToAll({ type: "AI_EVENT", data: event });
   });
 
-  logger.info({ port: env.WS_PORT }, "game services bound");
+  logger.info({ port: listenPort }, "game services bound");
 
   return {
     ctx,

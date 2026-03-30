@@ -15,6 +15,7 @@ import {
   sendJson,
   sendText,
 } from "./http.util.js";
+import { logger } from "../../infrastructure/logger/logger.js";
 
 export type AuthHttpDeps = {
   auth: AuthService;
@@ -63,6 +64,7 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
         const challenge = await deps.auth.createChallenge();
         sendJson(res, "200 OK", challenge);
       } catch (e) {
+        logger.error({ err: e }, "GET /auth/challenge failed");
         const msg = e instanceof Error ? e.message : "Internal error";
         sendJson(res, "500 Internal Server Error", { error: msg });
       }
@@ -133,6 +135,7 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
           });
           return;
         }
+        logger.error({ err: e }, "POST /auth/verify failed");
         sendJson(res, "500 Internal Server Error", { error: "Internal error" });
       }
     })();
@@ -187,6 +190,7 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
           });
           return;
         }
+        logger.error({ err: e }, "POST /auth/refresh failed");
         sendJson(res, "500 Internal Server Error", { error: "Internal error" });
       }
     })();
@@ -275,6 +279,7 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
           });
           return;
         }
+        logger.error({ err: e }, "PATCH /profile/username failed");
         sendJson(res, "500 Internal Server Error", { error: "Internal error" });
       }
     })();
