@@ -42,7 +42,7 @@ export function createWsApp(ctx: WsAppContext) {
     userActions: ctx.userActions,
   });
 
-  return app.ws<WsUserData>("/*", {
+  return app.ws<WsUserData>("/ws", {
     compression: DISABLED,
     idleTimeout: 120,
     maxPayloadLength: 16 * 1024,
