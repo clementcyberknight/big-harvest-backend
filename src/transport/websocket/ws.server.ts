@@ -71,9 +71,11 @@ export function createWsApp(ctx: WsAppContext) {
       if (env.AUTH_DEV_BYPASS) {
         const q = req.getQuery("userId") ?? "";
         if (!q) {
-          res
-            .writeStatus("401 Unauthorized")
-            .end("userId query required when AUTH_DEV_BYPASS=true");
+          res.cork(() => {
+            res
+              .writeStatus("401 Unauthorized")
+              .end("userId query required when AUTH_DEV_BYPASS=true");
+          });
           return;
         }
         userId = q;
@@ -87,14 +89,18 @@ export function createWsApp(ctx: WsAppContext) {
           token = (req.getQuery("token") ?? "").trim();
         }
         if (!token) {
-          res
-            .writeStatus("401 Unauthorized")
-            .end("JWT required: Authorization: Bearer <token> or ?token=");
+          res.cork(() => {
+            res
+              .writeStatus("401 Unauthorized")
+              .end("JWT required: Authorization: Bearer <token> or ?token=");
+          });
           return;
         }
         const payload = verifyAccessToken(token);
         if (!payload) {
-          res.writeStatus("401 Unauthorized").end("Invalid or expired token");
+          res.cork(() => {
+            res.writeStatus("401 Unauthorized").end("Invalid or expired token");
+          });
           return;
         }
         userId = payload.sub;
@@ -110,7 +116,10 @@ export function createWsApp(ctx: WsAppContext) {
     },
     open(ws: WebSocket<WsUserData>) {
       /* userId set in upgrade */
-      ws.subscribe("global");
+      // NOTE: "global" subscription is deferred until after the initial unicast
+      // messages are sent. Subscribing here would cause any concurrent
+      // broadcastGameStatus() call to deliver a second GAME_STATUS to this
+      // client before the explicit send below, resulting in a duplicate.
       const { userId } = ws.getUserData();
       logger.debug({ userId }, "ws connected");
       void (async () => {
@@ -133,9 +142,11 @@ export function createWsApp(ctx: WsAppContext) {
             data: { inventory, gold, plots },
           });
 
-          const sid = await ctx.syndicates
-            .viewMembers(ws.getUserData().userId, { syndicateId: "auth-check" })
-            .catch(() => null);
+          // Subscribe to global broadcasts only after the initial state has
+          // been unicast to this client, avoiding a duplicate GAME_STATUS.
+          ws.subscribe("global");
+
+          await ctx.syndicates.ensureOnboarded(ws.getUserData().userId);
           const userSid = await ctx.syndicates.getUserSyndicateId(
             ws.getUserData().userId,
           );

@@ -584,6 +584,10 @@ export class SyndicateService {
     return new AppError("INTERNAL", "Internal error");
   }
 
+  async ensureOnboarded(userId: string): Promise<void> {
+    return this.onboarding.ensureOnboarded(userId);
+  }
+
   async getUserSyndicateId(userId: string): Promise<string | null> {
     return this.redis.get(userSyndicateIdKey(userId));
   }
