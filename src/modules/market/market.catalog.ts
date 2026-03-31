@@ -10,17 +10,11 @@ export type BuyCatalogEntry = {
   basePriceMicro: number;
 };
 
-/** Treasury shop: seeds, animals, tools (buy price from reference). */
+/** Treasury shop: all items with a buy price (buy price from reference). */
 export const BUY_CATALOG: Record<string, BuyCatalogEntry> = (() => {
   const out: Record<string, BuyCatalogEntry> = {};
-  const extraShop = new Set(["sugar"]);
   for (const [field, ref] of Object.entries(REFERENCE_GOLD)) {
-    if (
-      field.startsWith("seed:") ||
-      field.startsWith("animal:") ||
-      field.startsWith("tool:") ||
-      extraShop.has(field)
-    ) {
+    if (ref.buy > 0) {
       out[field] = {
         inventoryField: field,
         minLevel: 1,

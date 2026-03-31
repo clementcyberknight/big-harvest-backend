@@ -122,16 +122,8 @@ export function allPricedItemIds(): string[] {
   return Object.keys(REFERENCE_GOLD);
 }
 
-/** Treasury buys these (not seeds, live animals, or passive tools as “produce”). */
+/** Treasury buys these. All items with a sell price > 0 are sellable. */
 export function isTreasurySellable(itemId: string): boolean {
   const r = REFERENCE_GOLD[itemId];
-  if (!r || r.sell <= 0) return false;
-  if (
-    itemId.startsWith("seed:") ||
-    itemId.startsWith("tool:") ||
-    itemId.startsWith("animal:")
-  ) {
-    return false;
-  }
-  return true;
+  return !!(r && r.sell > 0);
 }
