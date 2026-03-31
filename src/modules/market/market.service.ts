@@ -62,7 +62,7 @@ export class MarketService {
   }
 
   async getUserGold(userId: string): Promise<number> {
-    const gold = await this.redis.get(walletKey(userId));
+    const gold = await this.redis.hget(walletKey(userId), "gold");
     return Number(gold) || 0;
   }
 

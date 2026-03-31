@@ -71,9 +71,11 @@ export function createWsApp(ctx: WsAppContext) {
       if (env.AUTH_DEV_BYPASS) {
         const q = req.getQuery("userId") ?? "";
         if (!q) {
-          res
-            .writeStatus("401 Unauthorized")
-            .end("userId query required when AUTH_DEV_BYPASS=true");
+          res.cork(() => {
+            res
+              .writeStatus("401 Unauthorized")
+              .end("userId query required when AUTH_DEV_BYPASS=true");
+          });
           return;
         }
         userId = q;
@@ -87,14 +89,18 @@ export function createWsApp(ctx: WsAppContext) {
           token = (req.getQuery("token") ?? "").trim();
         }
         if (!token) {
-          res
-            .writeStatus("401 Unauthorized")
-            .end("JWT required: Authorization: Bearer <token> or ?token=");
+          res.cork(() => {
+            res
+              .writeStatus("401 Unauthorized")
+              .end("JWT required: Authorization: Bearer <token> or ?token=");
+          });
           return;
         }
         const payload = verifyAccessToken(token);
         if (!payload) {
-          res.writeStatus("401 Unauthorized").end("Invalid or expired token");
+          res.cork(() => {
+            res.writeStatus("401 Unauthorized").end("Invalid or expired token");
+          });
           return;
         }
         userId = payload.sub;
