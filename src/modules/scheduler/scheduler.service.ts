@@ -18,13 +18,18 @@ const SCHEDULES = {
 export class SchedulerService {
   private intervals: NodeJS.Timeout[] = [];
 
-  constructor(private readonly redis: Redis) {}
+  constructor(
+    private readonly redis: Redis,
+    private readonly onPricingTick?: () => Promise<void>,
+  ) {}
 
   startAll(): void {
     logger.info("[scheduler] Starting centralized cron jobs");
 
     // 1. Pricing Worker
-    this.scheduleJob("Pricing", SCHEDULES.PRICING, () => runPricingTick(this.redis));
+    this.scheduleJob("Pricing", SCHEDULES.PRICING, () =>
+      runPricingTick(this.redis, this.onPricingTick),
+    );
 
     // 2. Crop Decay
     this.scheduleJob("CropDecay", SCHEDULES.CROP_DECAY, () => runCropDecayTick(this.redis));

@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { Redis } from "ioredis";
+import { STARTER_GOLD } from "../../config/constants.js";
 import { env } from "../../config/env.js";
+import { logger } from "../../infrastructure/logger/logger.js";
 import { authChallengeKey } from "../../infrastructure/redis/keys.js";
 import { AppError } from "../../shared/errors/appError.js";
 import type { ProfileService } from "../profile/profile.service.js";
@@ -81,6 +83,15 @@ export class AuthService {
       profile = await this.profiles.createFarmerProfile(walletAddress);
       isNewUser = true;
       await this.onboarding.ensureOnboarded(profile.id);
+      logger.info(
+        {
+          userId: profile.id,
+          walletAddress,
+          achievements: profile.achievements,
+          starterGold: STARTER_GOLD,
+        },
+        "new user created and rewarded with starter grant",
+      );
     }
 
     const accessToken = signAccessToken(profile.id, walletAddress);
