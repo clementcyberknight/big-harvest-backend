@@ -25,7 +25,10 @@ export function setAiEventBroadcaster(fn: AiEventBroadcaster): void {
 export async function runAiEventTick(redis: Redis): Promise<void> {
   const active = await getActiveEvent(redis);
   if (active) {
-    logger.debug("[ai-events] Active event exists, skipping tick");
+    logger.info(
+      { activeEventId: active.id, activeEventTitle: active.title },
+      "[ai-events] Active event exists, skipping tick",
+    );
     return;
   }
 
@@ -40,7 +43,9 @@ export async function runAiEventTick(redis: Redis): Promise<void> {
   const hasAnomalies = anomalies.length > 0;
 
   if (!hasDeviations && !hasGoldIssue && !hasAnomalies) {
-    logger.debug("[ai-events] No deviations, gold issues, or anomalies detected");
+    logger.debug(
+      "[ai-events] No deviations, gold issues, or anomalies detected",
+    );
     return;
   }
 
@@ -65,12 +70,21 @@ export async function runAiEventTick(redis: Redis): Promise<void> {
 
   if (event) {
     await setActiveEvent(redis, event);
-    const emoji = event.outcome === "boycott" ? "🚫" : event.outcome === "surge" ? "📈" : "📉";
+    const emoji =
+      event.outcome === "boycott" ? "🚫" : event.outcome === "surge" ? "📈" : "📉";
     logger.info(
-      { id: event.id, title: event.title, outcome: event.outcome, multiplier: event.multiplier, items: event.affectedItems },
+      {
+        id: event.id,
+        title: event.title,
+        outcome: event.outcome,
+        multiplier: event.multiplier,
+        items: event.affectedItems,
+      },
       `[ai-events] ${emoji} Event triggered: "${event.title}"`,
     );
     if (broadcaster) await broadcaster(event);
+  } else {
+    logger.info("[ai-events] AI event generation skipped or failed");
   }
 }
 

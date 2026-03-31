@@ -143,15 +143,18 @@ export async function generateAiEvent(
   context: AiEventContext,
 ): Promise<MarketEvent | null> {
   if (!env.XAI_API_KEY) {
-    logger.warn(
+    logger.info(
       "[ai-events] XAI_API_KEY not set — skipping AI event generation",
     );
     return null;
   }
 
-  const cd = await redis.get(EVENT_COOLDOWN_KEY);
-  if (cd) {
-    logger.debug("[ai-events] AI generation on cooldown");
+  const ttl = await redis.ttl(EVENT_COOLDOWN_KEY);
+  if (ttl > 0) {
+    logger.info(
+      { remainingSeconds: ttl },
+      "[ai-events] AI generation on cooldown",
+    );
     return null;
   }
 
@@ -220,13 +223,19 @@ Be creative, dramatic, and season-appropriate. Vary between all three outcome ty
     objectResult = object;
     logger.info("[ai-events] Successfully generated event using grok-3-mini-fast");
   } catch (err) {
-    logger.error({ err }, "[ai-events] Grok event generation failed");
+    logger.error(
+      { err, trigger, context },
+      "[ai-events] Grok event generation failed",
+    );
     return null;
   }
 
   const validAffect = objectResult.affect.filter((id) => validIds.has(id));
   if (validAffect.length === 0) {
-    logger.warn("[ai-events] AI returned no valid commodity IDs");
+    logger.info(
+      { returnedAffect: objectResult.affect },
+      "[ai-events] AI returned no valid commodity IDs",
+    );
     return null;
   }
 
