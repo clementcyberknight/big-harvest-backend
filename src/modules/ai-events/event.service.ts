@@ -213,12 +213,12 @@ Be creative, dramatic, and season-appropriate. Vary between all three outcome ty
   try {
     const xai = createXai({ apiKey: env.XAI_API_KEY });
     const { object } = await generateObject({
-      model: xai("grok-4-1-fast-reasoning"),
+      model: xai("grok-3-mini-fast"),
       schema: marketEventSchema,
       prompt: aiPrompt,
     });
     objectResult = object;
-    logger.info("[ai-events] Successfully generated event using Grok 3 Mini");
+    logger.info("[ai-events] Successfully generated event using grok-3-mini-fast");
   } catch (err) {
     logger.error({ err }, "[ai-events] Grok event generation failed");
     return null;
