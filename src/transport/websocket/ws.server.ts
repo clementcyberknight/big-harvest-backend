@@ -110,7 +110,10 @@ export function createWsApp(ctx: WsAppContext) {
     },
     open(ws: WebSocket<WsUserData>) {
       /* userId set in upgrade */
-      ws.subscribe("global");
+      // NOTE: "global" subscription is deferred until after the initial unicast
+      // messages are sent. Subscribing here would cause any concurrent
+      // broadcastGameStatus() call to deliver a second GAME_STATUS to this
+      // client before the explicit send below, resulting in a duplicate.
       const { userId } = ws.getUserData();
       logger.debug({ userId }, "ws connected");
       void (async () => {
@@ -132,6 +135,10 @@ export function createWsApp(ctx: WsAppContext) {
             type: "GAME_STATE",
             data: { inventory, gold, plots },
           });
+
+          // Subscribe to global broadcasts only after the initial state has
+          // been unicast to this client, avoiding a duplicate GAME_STATUS.
+          ws.subscribe("global");
 
           const sid = await ctx.syndicates
             .viewMembers(ws.getUserData().userId, { syndicateId: "auth-check" })
