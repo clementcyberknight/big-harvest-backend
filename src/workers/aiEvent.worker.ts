@@ -7,7 +7,10 @@ import {
   setActiveEvent,
   getActiveEvent,
 } from "../modules/ai-events/event.service.js";
-import type { AiEventContext } from "../modules/ai-events/event.service.js";
+import type {
+  AiEventContext,
+  GenerateAiEventResult,
+} from "../modules/ai-events/event.service.js";
 import type { MarketEvent } from "../modules/ai-events/event.types.js";
 import { AnalyticsService } from "../modules/analytics/analytics.service.js";
 
@@ -17,6 +20,37 @@ const DEVIATION_THRESHOLD_PCT = 60;
 export type AiEventBroadcaster = (event: MarketEvent) => void | Promise<void>;
 
 let broadcaster: AiEventBroadcaster | null = null;
+
+function logAiEventGenerationSkip(
+  result: Extract<GenerateAiEventResult, { ok: false }>,
+): void {
+  if (result.reason === "cooldown_active") {
+    logger.info(
+      result.details,
+      "[ai-events] AI event generation skipped: cooldown active",
+    );
+    return;
+  }
+
+  if (result.reason === "missing_api_key") {
+    logger.warn(
+      "[ai-events] AI event generation skipped: XAI_API_KEY not configured",
+    );
+    return;
+  }
+
+  if (result.reason === "invalid_affected_items") {
+    logger.warn(
+      result.details,
+      "[ai-events] AI event generation failed: AI returned no valid commodity IDs",
+    );
+    return;
+  }
+
+  logger.error(
+    "[ai-events] AI event generation failed: provider request error",
+  );
+}
 
 export function setAiEventBroadcaster(fn: AiEventBroadcaster): void {
   broadcaster = fn;
@@ -66,9 +100,10 @@ export async function runAiEventTick(redis: Redis): Promise<void> {
       : undefined,
   };
 
-  const event = await generateAiEvent(redis, trigger, ctx);
+  const result = await generateAiEvent(redis, trigger, ctx);
 
-  if (event) {
+  if (result.ok) {
+    const { event } = result;
     await setActiveEvent(redis, event);
     const emoji =
       event.outcome === "boycott" ? "🚫" : event.outcome === "surge" ? "📈" : "📉";
@@ -84,7 +119,7 @@ export async function runAiEventTick(redis: Redis): Promise<void> {
     );
     if (broadcaster) await broadcaster(event);
   } else {
-    logger.info("[ai-events] AI event generation skipped or failed");
+    logAiEventGenerationSkip(result);
   }
 }
 

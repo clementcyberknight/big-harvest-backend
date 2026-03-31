@@ -137,25 +137,40 @@ export type AiEventContext = {
   }>;
 };
 
+export type GenerateAiEventResult =
+  | {
+      ok: true;
+      event: MarketEvent;
+    }
+  | {
+      ok: false;
+      reason:
+        | "missing_api_key"
+        | "cooldown_active"
+        | "provider_error"
+        | "invalid_affected_items";
+      details?: Record<string, unknown>;
+    };
+
 export async function generateAiEvent(
   redis: Redis,
   trigger: MarketEventTrigger,
   context: AiEventContext,
-): Promise<MarketEvent | null> {
+): Promise<GenerateAiEventResult> {
   if (!env.XAI_API_KEY) {
-    logger.info(
-      "[ai-events] XAI_API_KEY not set — skipping AI event generation",
-    );
-    return null;
+    return {
+      ok: false,
+      reason: "missing_api_key",
+    };
   }
 
   const ttl = await redis.ttl(EVENT_COOLDOWN_KEY);
   if (ttl > 0) {
-    logger.info(
-      { remainingSeconds: ttl },
-      "[ai-events] AI generation on cooldown",
-    );
-    return null;
+    return {
+      ok: false,
+      reason: "cooldown_active",
+      details: { remainingSeconds: ttl },
+    };
   }
 
   const season = getCurrentSeason();
@@ -227,16 +242,19 @@ Be creative, dramatic, and season-appropriate. Vary between all three outcome ty
       { err, trigger, context },
       "[ai-events] Grok event generation failed",
     );
-    return null;
+    return {
+      ok: false,
+      reason: "provider_error",
+    };
   }
 
   const validAffect = objectResult.affect.filter((id) => validIds.has(id));
   if (validAffect.length === 0) {
-    logger.info(
-      { returnedAffect: objectResult.affect },
-      "[ai-events] AI returned no valid commodity IDs",
-    );
-    return null;
+    return {
+      ok: false,
+      reason: "invalid_affected_items",
+      details: { returnedAffect: objectResult.affect },
+    };
   }
 
   let multiplier = objectResult.impact_multiplier;
@@ -263,7 +281,10 @@ Be creative, dramatic, and season-appropriate. Vary between all three outcome ty
   };
 
   await redis.set(EVENT_COOLDOWN_KEY, "1", "EX", AI_COOLDOWN_SEC);
-  return event;
+  return {
+    ok: true,
+    event,
+  };
 }
 
 export async function setActiveEvent(
