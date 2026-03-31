@@ -14,7 +14,7 @@ import { AnalyticsService } from "../modules/analytics/analytics.service.js";
 const DEVIATION_CHECK_MS = 60 * 1000;
 const DEVIATION_THRESHOLD_PCT = 60;
 
-export type AiEventBroadcaster = (event: MarketEvent) => void;
+export type AiEventBroadcaster = (event: MarketEvent) => void | Promise<void>;
 
 let broadcaster: AiEventBroadcaster | null = null;
 
@@ -70,7 +70,7 @@ export async function runAiEventTick(redis: Redis): Promise<void> {
       { id: event.id, title: event.title, outcome: event.outcome, multiplier: event.multiplier, items: event.affectedItems },
       `[ai-events] ${emoji} Event triggered: "${event.title}"`,
     );
-    if (broadcaster) broadcaster(event);
+    if (broadcaster) await broadcaster(event);
   }
 }
 
