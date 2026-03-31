@@ -5,7 +5,6 @@ import { env } from "../../config/env.js";
 import { logger } from "../../infrastructure/logger/logger.js";
 import { authChallengeKey } from "../../infrastructure/redis/keys.js";
 import { AppError } from "../../shared/errors/appError.js";
-import { logger } from "../../infrastructure/logger/logger.js";
 import type { ProfileService } from "../profile/profile.service.js";
 import type { OnboardingService } from "../onboarding/onboarding.service.js";
 import { signAccessToken } from "./jwt.js";
