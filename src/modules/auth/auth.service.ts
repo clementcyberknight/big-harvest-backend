@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { Redis } from "ioredis";
+import { STARTER_GOLD } from "../../config/constants.js";
 import { env } from "../../config/env.js";
+import { logger } from "../../infrastructure/logger/logger.js";
 import { authChallengeKey } from "../../infrastructure/redis/keys.js";
 import { AppError } from "../../shared/errors/appError.js";
 import { logger } from "../../infrastructure/logger/logger.js";

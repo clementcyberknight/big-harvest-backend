@@ -2,6 +2,7 @@ import { App, DISABLED } from "uWebSockets.js";
 import type { WebSocket } from "uWebSockets.js";
 import { env } from "../../config/env.js";
 import { logger } from "../../infrastructure/logger/logger.js";
+import { getActiveEvent } from "../../modules/ai-events/event.service.js";
 import { verifyAccessToken } from "../../modules/auth/jwt.js";
 import {
   registerAuthHttp,
@@ -27,6 +28,22 @@ export function broadcastToSyndicate(
 export function broadcastToAll(message: WsOutboundMessage) {
   if (!globalApp) return;
   globalApp.publish("global", JSON.stringify(message), false);
+}
+
+export async function broadcastGameStatus(ctx: WsAppContext) {
+  if (!globalApp) return;
+  try {
+    const [prices, activeEvent] = await Promise.all([
+      ctx.market.getAllPrices(),
+      getActiveEvent(ctx.redis),
+    ]);
+    broadcastToAll({
+      type: "GAME_STATUS",
+      data: { prices, activeEvent },
+    });
+  } catch (err) {
+    logger.error({ err }, "failed to broadcast game status");
+  }
 }
 
 export type ListenToken = unknown;
@@ -98,8 +115,22 @@ export function createWsApp(ctx: WsAppContext) {
       logger.debug({ userId }, "ws connected");
       void (async () => {
         try {
-          // Fetch syndicate membership for this user
-          const userSid = await ctx.syndicates.getUserSyndicateId(userId);
+          const [prices, activeEvent] = await Promise.all([
+            ctx.market.getAllPrices(),
+            getActiveEvent(ctx.redis),
+          ]);
+          sendGameMessage(ws, {
+            type: "GAME_STATUS",
+            data: { prices, activeEvent },
+          });
+
+          const sid = await ctx.syndicates
+            .viewMembers(ws.getUserData().userId, { syndicateId: "auth-check" })
+            .catch(() => null);
+          const userSid = await ctx.syndicates.getUserSyndicateId(
+            ws.getUserData().userId,
+          );
+
           if (userSid) {
             ws.subscribe(`syndicate:${userSid}`);
           }

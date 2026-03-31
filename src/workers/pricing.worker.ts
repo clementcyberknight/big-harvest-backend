@@ -20,7 +20,7 @@ function clamp(n: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, n));
 }
 
-export async function runPricingTick(redis: Redis): Promise<void> {
+export async function runPricingTick(redis: Redis, onComplete?: () => Promise<void>): Promise<void> {
   const pricesK = treasuryPricesKey();
   const buyK = treasuryBuyFlowKey();
   const sellK = treasurySellFlowKey();
@@ -83,6 +83,7 @@ export async function runPricingTick(redis: Redis): Promise<void> {
     else w.hdel(d.key, d.field);
   }
   await w.exec();
+  if (onComplete) await onComplete();
 }
 
 export function startPricingLoop(redis: Redis): () => void {

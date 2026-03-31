@@ -62,6 +62,7 @@ export type WsOutboundMessage =
   | { type: "VIEW_MEMBER_CONTRIBUTION_OK"; data: unknown }
   | { type: "VIEW_LEADERBOARD_OK"; data: unknown }
   | { type: "AI_EVENT"; data: unknown }
+  | { type: "GAME_STATUS"; data: { prices: Record<string, number>; activeEvent: any | null } }
   | { type: "SYNDICATE_IDOL_EVENT"; data: unknown }
   | { type: "ERROR"; code: string; message: string; details?: unknown }
   | { type: "PONG" };

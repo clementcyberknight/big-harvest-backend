@@ -17,6 +17,7 @@ import { SyndicateService } from "./modules/syndicate/syndicate.service.js";
 import { UserActionService } from "./modules/user-actions/userAction.service.js";
 import {
   broadcastToAll,
+  broadcastGameStatus,
   createWsApp,
   listenGameWs,
   type ListenToken,
@@ -60,9 +61,9 @@ export async function startApp(): Promise<AppInstance> {
   const stopUserActionsWorker = startUserActionsFlushWorker(redis);
   const syndicates = new SyndicateService(redis);
   const leaderboards = new LeaderboardService(redis);
-  const scheduler = new SchedulerService(redis);
 
   const ctx: WsAppContext = {
+    redis,
     planting: new PlantingService(redis),
     harvesting: new HarvestingService(redis),
     market,
@@ -76,6 +77,8 @@ export async function startApp(): Promise<AppInstance> {
     profile,
   };
 
+  const scheduler = new SchedulerService(redis, () => broadcastGameStatus(ctx));
+
   const uws = createWsApp(ctx);
   // Always bind to WS_PORT. Set this to match the "Internal Port" value in
   // Railway Public Networking. Do NOT rely on Railway's injected PORT variable.
@@ -87,8 +90,9 @@ export async function startApp(): Promise<AppInstance> {
   scheduler.startAll();
 
   // Set up AI event broadcaster to push to all connected WS clients
-  setAiEventBroadcaster((event) => {
+  setAiEventBroadcaster(async (event) => {
     broadcastToAll({ type: "AI_EVENT", data: event });
+    await broadcastGameStatus(ctx);
   });
 
   logger.info({ port: listenPort }, "game services bound");

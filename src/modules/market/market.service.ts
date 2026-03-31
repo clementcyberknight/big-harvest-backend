@@ -52,6 +52,15 @@ export class MarketService {
     return 0;
   }
 
+  async getAllPrices(): Promise<Record<string, number>> {
+    const raw = await this.redis.hgetall(treasuryPricesKey());
+    const prices: Record<string, number> = {};
+    for (const [item, price] of Object.entries(raw)) {
+      prices[item] = Number(price);
+    }
+    return prices;
+  }
+
   async sell(userId: string, raw: unknown): Promise<SellResult> {
     await this.onboarding.ensureOnboarded(userId);
 

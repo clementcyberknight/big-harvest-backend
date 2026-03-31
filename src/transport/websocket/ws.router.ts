@@ -1,4 +1,5 @@
 import type { WebSocket } from "uWebSockets.js";
+import type { Redis } from "ioredis";
 import { logger } from "../../infrastructure/logger/logger.js";
 import type { AnimalService } from "../../modules/animal/animal.service.js";
 import type { CraftingService } from "../../modules/crafting/crafting.service.js";
@@ -43,6 +44,7 @@ import { parseWsInbound, sendGameMessage } from "./ws.codec.js";
 import type { WsUserData } from "./ws.types.js";
 
 export type WsGameContext = {
+  redis: Redis;
   planting: PlantingService;
   harvesting: HarvestingService;
   market: MarketService;
