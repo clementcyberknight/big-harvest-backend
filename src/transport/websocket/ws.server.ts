@@ -9,7 +9,7 @@ import {
   type AuthHttpDeps,
 } from "../http/registerAuthHttp.js";
 import { registerCatalogHttp } from "../http/registerCatalogHttp.js";
-import { sendGameMessage } from "./ws.codec.js";
+import { sendGameMessage, packr } from "./ws.codec.js";
 import { dispatchWsMessage, type WsGameContext } from "./ws.router.js";
 import type { WsOutboundMessage, WsUserData } from "./ws.types.js";
 
@@ -22,12 +22,14 @@ export function broadcastToSyndicate(
 ) {
   if (!globalApp) return;
   const topic = `syndicate:${syndicateId}`;
-  globalApp.publish(topic, JSON.stringify(message), false);
+  const packed = packr.pack(message);
+  globalApp.publish(topic, packed, true);
 }
 
 export function broadcastToAll(message: WsOutboundMessage) {
   if (!globalApp) return;
-  globalApp.publish("global", JSON.stringify(message), false);
+  const packed = packr.pack(message);
+  globalApp.publish("global", packed, true);
 }
 
 export async function broadcastGameStatus(ctx: WsAppContext) {
@@ -146,7 +148,7 @@ export function createWsApp(ctx: WsAppContext) {
         } catch (err) {
           logger.error(
             { err, userId },
-            "failed to fetch user syndicate on ws open",
+            "failed to initialize user game state on ws open",
           );
         }
       })();

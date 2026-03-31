@@ -10,7 +10,7 @@ import type {
  * Binary MessagePack for the WebSocket hot path.
  * Outbound is always msgpack binary frames; inbound accepts msgpack binary or UTF-8 JSON (dev/tools).
  */
-const packr = new Packr({
+export const packr = new Packr({
   /* Avoid record structures so arbitrary game payloads round-trip without schema registration */
   useRecords: false,
 });
