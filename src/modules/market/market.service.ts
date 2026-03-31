@@ -19,13 +19,15 @@ import {
   isBuyableItem,
   isTreasurySellable,
   produceBasePriceMicro,
+  PRICED_ITEM_IDS,
+  resolveBaseMicro,
 } from "./market.catalog.js";
 import { treasuryTradeSchema } from "./market.validator.js";
-import type { BuyResult, SellResult } from "./market.types.js";
+import type { BuyResult, SellResult, MarketStatus } from "./market.types.js";
 import { OnboardingService } from "../onboarding/onboarding.service.js";
 import { redisTreasuryBuy, redisTreasurySell } from "../../infrastructure/redis/commands.js";
 import { IDEMPOTENCY_TTL_SEC } from "../../config/constants.js";
-import { getEventMultiplier } from "../ai-events/event.service.js";
+import { getEventMultiplier, getActiveEvent } from "../ai-events/event.service.js";
 import { AnalyticsService } from "../analytics/analytics.service.js";
 import { userSyndicateIdKey, syndicateTaxPenaltyKey } from "../../infrastructure/redis/keys.js";
 
@@ -52,13 +54,38 @@ export class MarketService {
     return 0;
   }
 
-  async getAllPrices(): Promise<Record<string, number>> {
+  async getAllPrices(): Promise<MarketStatus> {
     const raw = await this.redis.hgetall(treasuryPricesKey());
-    const prices: Record<string, number> = {};
-    for (const [item, price] of Object.entries(raw)) {
-      prices[item] = Number(price);
+    const activeEvent = await getActiveEvent(this.redis);
+    const now = Date.now();
+
+    const status: MarketStatus = {};
+
+    for (const id of PRICED_ITEM_IDS) {
+      let priceMicro = Number(raw[id]) || 0;
+      if (priceMicro < 1) {
+        priceMicro = resolveBaseMicro(id);
+      }
+
+      // Apply AI event multiplier
+      if (
+        activeEvent &&
+        now <= activeEvent.expiresAtMs &&
+        activeEvent.affectedItems.includes(id)
+      ) {
+        priceMicro = Math.max(1, Math.round(priceMicro * activeEvent.multiplier));
+      }
+
+      const canBuy = isBuyableItem(id);
+      const canSell = isTreasurySellable(id);
+
+      status[id] = {
+        buy: canBuy ? priceMicro : null,
+        sell: canSell ? priceMicro : null,
+      };
     }
-    return prices;
+
+    return status;
   }
 
   async getUserGold(userId: string): Promise<number> {
