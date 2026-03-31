@@ -21,12 +21,16 @@ function bufferFromMessage(message: ArrayBuffer | Uint8Array): Buffer {
   );
 }
 
+/** Pack a WsOutboundMessage to a binary msgpack Buffer for publishing. */
+export function packGameMessage(msg: WsOutboundMessage): Buffer {
+  return packr.pack(msg) as Buffer;
+}
+
 export function sendGameMessage(
   ws: WebSocket<WsUserData>,
   msg: WsOutboundMessage,
 ): void {
-  const packed = packr.pack(msg) as Buffer;
-  ws.send(packed, true);
+  ws.send(packGameMessage(msg), true);
 }
 
 function normalizeInbound(o: unknown): WsInboundMessage | null {

@@ -9,7 +9,8 @@ import {
   type AuthHttpDeps,
 } from "../http/registerAuthHttp.js";
 import { registerCatalogHttp } from "../http/registerCatalogHttp.js";
-import { sendGameMessage } from "./ws.codec.js";
+import { packGameMessage, sendGameMessage } from "./ws.codec.js";
+import { serverNowMs } from "../../shared/utils/time.js";
 import { dispatchWsMessage, type WsGameContext } from "./ws.router.js";
 import type { WsOutboundMessage, WsUserData } from "./ws.types.js";
 
@@ -22,12 +23,12 @@ export function broadcastToSyndicate(
 ) {
   if (!globalApp) return;
   const topic = `syndicate:${syndicateId}`;
-  globalApp.publish(topic, JSON.stringify(message), false);
+  globalApp.publish(topic, packGameMessage(message), true);
 }
 
 export function broadcastToAll(message: WsOutboundMessage) {
   if (!globalApp) return;
-  globalApp.publish("global", JSON.stringify(message), false);
+  globalApp.publish("global", packGameMessage(message), true);
 }
 
 export async function broadcastGameStatus(ctx: WsAppContext) {
@@ -39,7 +40,7 @@ export async function broadcastGameStatus(ctx: WsAppContext) {
     ]);
     broadcastToAll({
       type: "GAME_STATUS",
-      data: { prices, activeEvent },
+      data: { prices, activeEvent, serverNowMs: serverNowMs() },
     });
   } catch (err) {
     logger.error({ err }, "failed to broadcast game status");
@@ -134,7 +135,7 @@ export function createWsApp(ctx: WsAppContext) {
 
           sendGameMessage(ws, {
             type: "GAME_STATUS",
-            data: { prices, activeEvent },
+            data: { prices, activeEvent, serverNowMs: serverNowMs() },
           });
 
           sendGameMessage(ws, {
