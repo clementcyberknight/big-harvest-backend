@@ -41,6 +41,7 @@ import {
   handleViewSyndicateMember,
 } from "./handlers/syndicate.handler.js";
 import { parseWsInbound, sendGameMessage } from "./ws.codec.js";
+import { serverNowMs } from "../../shared/utils/time.js";
 import type { WsUserData } from "./ws.types.js";
 
 export type WsGameContext = {
@@ -74,7 +75,11 @@ export async function dispatchWsMessage(
 
   switch (msg.type) {
     case "PING":
-      sendGameMessage(ws, { type: "PONG" });
+      sendGameMessage(ws, {
+        type: "PONG",
+        serverNowMs: serverNowMs(),
+        clientTs: (msg.payload as Record<string, unknown> | null)?.ts,
+      });
       return;
     case "PLANT":
       await handlePlant(ws, msg.payload, ctx.planting, ctx.userActions);
