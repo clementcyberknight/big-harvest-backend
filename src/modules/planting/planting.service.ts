@@ -17,6 +17,10 @@ export class PlantingService {
     private readonly onboarding = new OnboardingService(redis),
   ) {}
 
+  async getPlots(userId: string): Promise<any[]> {
+    return this.farmRepo.getPlots(this.redis, userId);
+  }
+
   async plant(userId: string, raw: unknown): Promise<PlantResult> {
     const parsed = plantCommandSchema.safeParse(raw);
     if (!parsed.success) {

@@ -61,6 +61,20 @@ export class MarketService {
     return prices;
   }
 
+  async getUserGold(userId: string): Promise<number> {
+    const gold = await this.redis.get(walletKey(userId));
+    return Number(gold) || 0;
+  }
+
+  async getUserInventory(userId: string): Promise<Record<string, number>> {
+    const raw = await this.redis.hgetall(inventoryKey(userId));
+    const inventory: Record<string, number> = {};
+    for (const [item, qty] of Object.entries(raw)) {
+      inventory[item] = Number(qty);
+    }
+    return inventory;
+  }
+
   async sell(userId: string, raw: unknown): Promise<SellResult> {
     await this.onboarding.ensureOnboarded(userId);
 

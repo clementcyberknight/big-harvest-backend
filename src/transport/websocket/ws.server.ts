@@ -115,13 +115,22 @@ export function createWsApp(ctx: WsAppContext) {
       logger.debug({ userId }, "ws connected");
       void (async () => {
         try {
-          const [prices, activeEvent] = await Promise.all([
+          const [prices, activeEvent, gold, inventory, plots] = await Promise.all([
             ctx.market.getAllPrices(),
             getActiveEvent(ctx.redis),
+            ctx.market.getUserGold(userId),
+            ctx.market.getUserInventory(userId),
+            ctx.planting.getPlots(userId),
           ]);
+
           sendGameMessage(ws, {
             type: "GAME_STATUS",
             data: { prices, activeEvent },
+          });
+
+          sendGameMessage(ws, {
+            type: "GAME_STATE",
+            data: { inventory, gold, plots },
           });
 
           const sid = await ctx.syndicates
