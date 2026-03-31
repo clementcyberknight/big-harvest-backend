@@ -94,19 +94,20 @@ export function createWsApp(ctx: WsAppContext) {
     open(ws: WebSocket<WsUserData>) {
       /* userId set in upgrade */
       ws.subscribe("global");
+      const { userId } = ws.getUserData();
+      logger.debug({ userId }, "ws connected");
       void (async () => {
         try {
-          const sid = await ctx.syndicates
-            .viewMembers(ws.getUserData().userId, { syndicateId: "auth-check" })
-            .catch(() => null);
-          const userSid = await ctx.syndicates.getUserSyndicateId(
-            ws.getUserData().userId,
-          );
+          // Fetch syndicate membership for this user
+          const userSid = await ctx.syndicates.getUserSyndicateId(userId);
           if (userSid) {
             ws.subscribe(`syndicate:${userSid}`);
           }
-        } catch {
-          /* ignore */
+        } catch (err) {
+          logger.error(
+            { err, userId },
+            "failed to fetch user syndicate on ws open",
+          );
         }
       })();
     },
@@ -141,7 +142,10 @@ export function listenGameWs(
   return new Promise((resolve, reject) => {
     app.listen(port, (token) => {
       if (!token) {
-        logger.fatal({ port }, "uWS failed to bind — port in use or permission denied");
+        logger.fatal(
+          { port },
+          "uWS failed to bind — port in use or permission denied",
+        );
         reject(new Error(`Failed to listen on port ${port}`));
         return;
       }

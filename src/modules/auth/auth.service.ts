@@ -3,6 +3,7 @@ import type { Redis } from "ioredis";
 import { env } from "../../config/env.js";
 import { authChallengeKey } from "../../infrastructure/redis/keys.js";
 import { AppError } from "../../shared/errors/appError.js";
+import { logger } from "../../infrastructure/logger/logger.js";
 import type { ProfileService } from "../profile/profile.service.js";
 import type { OnboardingService } from "../onboarding/onboarding.service.js";
 import { signAccessToken } from "./jwt.js";
@@ -81,6 +82,18 @@ export class AuthService {
       profile = await this.profiles.createFarmerProfile(walletAddress);
       isNewUser = true;
       await this.onboarding.ensureOnboarded(profile.id);
+      logger.info(
+        {
+          userId: profile.id,
+          walletAddress,
+          username: profile.username,
+          achievements: profile.achievements,
+          starterGold: 250,
+          starterPlots: 4,
+          starterSeeds: { "seed:wheat": 2 },
+        },
+        "new user created — starter rewards granted",
+      );
     }
 
     const accessToken = signAccessToken(profile.id, walletAddress);
