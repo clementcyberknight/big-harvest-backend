@@ -146,9 +146,7 @@ export function createWsApp(ctx: WsAppContext) {
           // been unicast to this client, avoiding a duplicate GAME_STATUS.
           ws.subscribe("global");
 
-          const sid = await ctx.syndicates
-            .viewMembers(ws.getUserData().userId, { syndicateId: "auth-check" })
-            .catch(() => null);
+          await ctx.syndicates.ensureOnboarded(ws.getUserData().userId);
           const userSid = await ctx.syndicates.getUserSyndicateId(
             ws.getUserData().userId,
           );
