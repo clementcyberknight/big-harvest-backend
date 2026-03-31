@@ -6,6 +6,7 @@ import {
   generateAiEvent,
   setActiveEvent,
   getActiveEvent,
+  ACTIVE_EVENT_KEY,
 } from "../modules/ai-events/event.service.js";
 import type { AiEventContext } from "../modules/ai-events/event.service.js";
 import type { MarketEvent } from "../modules/ai-events/event.types.js";
@@ -25,7 +26,11 @@ export function setAiEventBroadcaster(fn: AiEventBroadcaster): void {
 export async function runAiEventTick(redis: Redis): Promise<void> {
   const active = await getActiveEvent(redis);
   if (active) {
-    logger.debug("[ai-events] Active event exists, skipping tick");
+    const ttl = await redis.ttl(ACTIVE_EVENT_KEY);
+    logger.info(
+      { expiresAt: active.expiresAtMs, ttlSec: ttl },
+      "[ai-events] Active event exists, skipping tick",
+    );
     return;
   }
 
@@ -40,7 +45,7 @@ export async function runAiEventTick(redis: Redis): Promise<void> {
   const hasAnomalies = anomalies.length > 0;
 
   if (!hasDeviations && !hasGoldIssue && !hasAnomalies) {
-    logger.debug("[ai-events] No deviations, gold issues, or anomalies detected");
+    logger.info("[ai-events] No deviations, gold issues, or anomalies detected — skipping tick");
     return;
   }
 

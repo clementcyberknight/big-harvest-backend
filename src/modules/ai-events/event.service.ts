@@ -18,8 +18,8 @@ import type {
 } from "./event.types.js";
 import crypto from "node:crypto";
 
-const ACTIVE_EVENT_KEY = "ravolo:ai_event:active";
-const EVENT_COOLDOWN_KEY = "ravolo:ai_event:cooldown";
+export const ACTIVE_EVENT_KEY = "ravolo:ai_event:active";
+export const EVENT_COOLDOWN_KEY = "ravolo:ai_event:cooldown";
 const ACTIVE_EVENT_TTL_SEC = 30 * 60;
 const AI_COOLDOWN_SEC = 60 * 60;
 
@@ -149,9 +149,12 @@ export async function generateAiEvent(
     return null;
   }
 
-  const cd = await redis.get(EVENT_COOLDOWN_KEY);
-  if (cd) {
-    logger.debug("[ai-events] AI generation on cooldown");
+  const cdTtl = await redis.ttl(EVENT_COOLDOWN_KEY);
+  if (cdTtl > 0) {
+    logger.info(
+      { cooldownRemainingSec: cdTtl },
+      "[ai-events] AI generation on cooldown",
+    );
     return null;
   }
 
