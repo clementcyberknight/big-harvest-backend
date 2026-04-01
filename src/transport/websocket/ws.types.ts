@@ -30,6 +30,7 @@ export type WsInboundMessage =
   | { type: "VIEW_COMMODITY_BANK"; payload: unknown }
   | { type: "VIEW_MEMBER_CONTRIBUTION"; payload: unknown }
   | { type: "VIEW_LEADERBOARD"; payload: unknown }
+  | { type: "GET_GAME_STATE"; payload?: unknown }
   | { type: "PING"; payload?: unknown };
 
 export type WsOutboundMessage =
@@ -71,6 +72,26 @@ export type WsOutboundMessage =
       };
     }
   | { type: "GAME_STATE"; data: { inventory: Record<string, number>; gold: number; plots: any[] } }
+  | { type: "GAME_STATE_OK"; data: {
+      gold: number;
+      level: number;
+      inventory: Record<string, number>;
+      lockedInv: Record<string, number>;
+      plots: {
+        plotId: number;
+        cropId: string | null;
+        plantedAtMs: number | null;
+        readyAtMs: number | null;
+        msUntilReady: number | null;
+        status: "empty" | "growing" | "ready";
+      }[];
+      animal: Record<string, string> | null;
+      craftPending: Record<string, string | number> | null;
+      activeLoanId: string | null;
+      syndicateId: string | null;
+      serverNowMs: number;
+    };
+  }
   | { type: "SYNDICATE_IDOL_EVENT"; data: unknown }
   | { type: "ERROR"; code: string; message: string; details?: unknown }
   | { type: "PONG"; serverNowMs: number; clientTs?: unknown };
