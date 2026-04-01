@@ -7,6 +7,7 @@ import type { HarvestingService } from "../../modules/harvesting/harvesting.serv
 import type { LoanService } from "../../modules/loan/loan.service.js";
 import type { MarketService } from "../../modules/market/market.service.js";
 import type { PlantingService } from "../../modules/planting/planting.service.js";
+import type { PlotService } from "../../modules/plot/plot.service.js";
 import type { UserActionService } from "../../modules/user-actions/userAction.service.js";
 import type { SyndicateService } from "../../modules/syndicate/syndicate.service.js";
 import {
@@ -14,6 +15,7 @@ import {
   handleAnimalHarvest,
 } from "./handlers/animal.handler.js";
 import { handleBuy } from "./handlers/buy.handler.js";
+import { handleBuyPlot } from "./handlers/buyPlot.handler.js";
 import { handleCraftClaim, handleCraftStart } from "./handlers/crafting.handler.js";
 import { handleLoanOpen, handleLoanRepay } from "./handlers/loan.handler.js";
 import { handleHarvest } from "./handlers/harvest.handler.js";
@@ -56,6 +58,7 @@ export type WsGameContext = {
   userActions: UserActionService;
   syndicates: SyndicateService;
   leaderboards: LeaderboardService;
+  plots: PlotService;
 };
 
 export async function dispatchWsMessage(
@@ -165,6 +168,9 @@ export async function dispatchWsMessage(
       return;
     case "VIEW_LEADERBOARD":
       await handleViewLeaderboard(ws, msg.payload, ctx);
+      return;
+    case "BUY_PLOT":
+      await handleBuyPlot(ws, msg.payload, ctx.plots, ctx.userActions);
       return;
     case "GET_GAME_STATE":
       await handleGetGameState(ws, ctx.redis);

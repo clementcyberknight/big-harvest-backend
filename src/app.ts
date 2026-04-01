@@ -12,6 +12,7 @@ import { HarvestingService } from "./modules/harvesting/harvesting.service.js";
 import { LoanService } from "./modules/loan/loan.service.js";
 import { MarketService } from "./modules/market/market.service.js";
 import { PlantingService } from "./modules/planting/planting.service.js";
+import { PlotService } from "./modules/plot/plot.service.js";
 import { ProfileService } from "./modules/profile/profile.service.js";
 import { SyndicateService } from "./modules/syndicate/syndicate.service.js";
 import { UserActionService } from "./modules/user-actions/userAction.service.js";
@@ -54,6 +55,7 @@ export async function startApp(): Promise<AppInstance> {
   const loan = new LoanService(redis);
   const animals = new AnimalService(redis);
   const crafting = new CraftingService(redis);
+  const plotSvc = new PlotService(redis);
   const profile = new ProfileService();
   const onboarding = new OnboardingService(redis);
   const auth = new AuthService(redis, profile, onboarding);
@@ -73,6 +75,7 @@ export async function startApp(): Promise<AppInstance> {
     userActions,
     syndicates,
     leaderboards,
+    plots: plotSvc,
     auth,
     profile,
   };

@@ -120,6 +120,13 @@ export const REFERENCE_GOLD: Record<string, RefPrice> = {
   "tool:oil_press":            p(75,  50),
   "tool:chocolate_processor":  p(150, 100),
   "tool:jam_station":          p(90,  60),
+
+  // ── Plot deeds (player buys from CBN to expand farm; no sell-back) ─────────
+  // Prices scale with tier: each successive tier costs significantly more.
+  // buy = purchase price from CBN; sell = 0 (no resale — land is permanent).
+  "plot:deed_t1":  p(500,  1),   // Tier 1 — 5th–8th plot
+  "plot:deed_t2":  p(1500, 1),   // Tier 2 — 9th–12th plot
+  "plot:deed_t3":  p(4000, 1),   // Tier 3 — 13th–16th plot
 };
 
 const refKeys = new Set(Object.keys(REFERENCE_GOLD));

@@ -240,3 +240,9 @@ export function syndicateContributionItemsKey(syndicateId: string): string {
 export function syndicateTaxPenaltyKey(syndicateId: string): string {
   return `ravolo:syndicate:${syndicateId}:tax_penalty`;
 }
+
+// --- Plot purchase ---
+
+export function buyPlotIdempotencyKey(userId: string, requestId: string): string {
+  return `ravolo:${userTag(userId)}:idemp:buy_plot:${requestId}`;
+}

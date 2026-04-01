@@ -50,6 +50,7 @@ let syndicateAttackSha: string | null = null;
 let syndicateIdolContributeSha: string | null = null;
 let syndicateLeaveOrDisbandSha: string | null = null;
 let decaySha: string | null = null;
+let buyPlotSha: string | null = null;
 
 export async function loadRedisScripts(redis: Redis): Promise<void> {
   const plantSrc = readFileSync(resolveLuaFile("plant.lua"), "utf8");
@@ -99,6 +100,7 @@ export async function loadRedisScripts(redis: Redis): Promise<void> {
     "utf8",
   );
   const decaySrc = readFileSync(resolveLuaFile("decay.lua"), "utf8");
+  const buyPlotSrc = readFileSync(resolveLuaFile("buyPlot.lua"), "utf8");
 
   plantSha = (await redis.script("LOAD", plantSrc)) as string;
   harvestSha = (await redis.script("LOAD", harvestSrc)) as string;
@@ -144,6 +146,7 @@ export async function loadRedisScripts(redis: Redis): Promise<void> {
     syndicateLeaveOrDisbandSrc,
   )) as string;
   decaySha = (await redis.script("LOAD", decaySrc)) as string;
+  buyPlotSha = (await redis.script("LOAD", buyPlotSrc)) as string;
 }
 
 export type PlantScriptResult =
@@ -1268,6 +1271,59 @@ export async function redisDecay(
     if (isReplyError(e) && e.message.includes("NOSCRIPT")) {
       await loadRedisScripts(redis);
       return redisDecay(redis, plotKey, currentTimeMs, maxDecayMs);
+    }
+    throw e;
+  }
+}
+
+// --- Plot Purchase ---
+
+export type BuyPlotResult = { newPlotId: number; goldSpent: number };
+
+function parseBuyPlotPayload(raw: string): BuyPlotResult {
+  const parts = raw.split("|");
+  if (parts[0] !== "OK" || parts.length !== 3) {
+    throw new Error(`Invalid buy plot payload: ${raw}`);
+  }
+  return { newPlotId: Number(parts[1]), goldSpent: Number(parts[2]) };
+}
+
+export async function redisBuyPlot(
+  redis: Redis,
+  keys: {
+    walletKey: string;
+    plotsKey: string;
+    idempKey: string;
+    reserveKey: string;
+  },
+  args: {
+    goldCost: number;
+    maxOwnedPlots: number;
+    idempTtlSec: number;
+    userId: string;
+    tsMs: number;
+  },
+): Promise<BuyPlotResult> {
+  if (!buyPlotSha) throw new Error("Redis scripts not loaded");
+  try {
+    const res = (await redis.evalsha(
+      buyPlotSha,
+      4,
+      keys.walletKey,
+      keys.plotsKey,
+      keys.idempKey,
+      keys.reserveKey,
+      String(args.goldCost),
+      String(args.maxOwnedPlots),
+      String(args.idempTtlSec),
+      args.userId,
+      String(args.tsMs),
+    )) as string;
+    return parseBuyPlotPayload(res);
+  } catch (e) {
+    if (isReplyError(e) && e.message.includes("NOSCRIPT")) {
+      await loadRedisScripts(redis);
+      return redisBuyPlot(redis, keys, args);
     }
     throw e;
   }

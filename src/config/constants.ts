@@ -15,6 +15,23 @@ export const STARTER_WHEAT_SEEDS = 2;
 export const STARTER_PLOT_IDS = [0, 1, 2, 3] as const;
 
 /**
+ * Plot purchase tiers — each deed unlocks a fixed number of additional plot slots.
+ * Plots are numbered sequentially starting from STARTER_PLOT_IDS.length (4).
+ * deed_t1 covers plots 4–7, deed_t2 covers plots 8–11, deed_t3 covers plots 12–15.
+ */
+export const PLOT_DEED_TIERS: Record<
+  string,
+  { plotsPerDeed: number; maxOwnedPlots: number }
+> = {
+  "plot:deed_t1": { plotsPerDeed: 1, maxOwnedPlots: 8 },
+  "plot:deed_t2": { plotsPerDeed: 1, maxOwnedPlots: 12 },
+  "plot:deed_t3": { plotsPerDeed: 1, maxOwnedPlots: 16 },
+};
+
+/** Absolute ceiling on plots a single player can ever own. */
+export const MAX_PLOTS_PER_USER = 16;
+
+/**
  * Price is stored as micro-gold per 1 unit (1000 micro = 1 gold).
  * Totals: floor(priceMicro * qty / PRICE_MICRO_PER_GOLD) on sell payout, ceil on buy cost.
  */

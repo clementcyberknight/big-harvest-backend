@@ -264,7 +264,88 @@ price is always higher per unit than sell price, so there is no risk-free arbitr
 
 ---
 
-## 5. Full wscat Session Example
+## 5. BUY_PLOT — Farmer expands farm by purchasing a plot of land
+
+Players start with 4 plots (indices 0–3) granted on first join. To get more planting
+capacity they must buy a **plot deed** from the treasury.
+
+### Deed Tiers
+
+| Deed type       | Cost (base) | Max plots after purchase | Notes |
+|-----------------|:-----------:|:------------------------:|-------|
+| `plot:deed_t1`  | ~650 gold   | 8 total                  | Unlocks plots 4–7, one at a time |
+| `plot:deed_t2`  | ~1950 gold  | 12 total                 | Unlocks plots 8–11 |
+| `plot:deed_t3`  | ~5200 gold  | 16 total                 | Unlocks plots 12–15 (hard cap) |
+
+Prices above are approximate at runtime — the dynamic pricing worker applies spread
+factors each tick just like seeds and tools.
+
+### Request
+
+```json
+{
+  "type": "BUY_PLOT",
+  "payload": {
+    "deedType": "plot:deed_t1",
+    "requestId": "req_plot_001"
+  }
+}
+```
+
+**Field rules:**
+- `deedType` — one of `"plot:deed_t1"`, `"plot:deed_t2"`, `"plot:deed_t3"`
+- `requestId` — idempotency key, 8–128 chars
+
+### Success Response
+
+```json
+{
+  "type": "BUY_PLOT_OK",
+  "data": {
+    "newPlotId": 4,
+    "goldSpent": 650,
+    "deedType": "plot:deed_t1"
+  }
+}
+```
+
+`newPlotId` is the sequential index of the newly-unlocked plot — it becomes available
+immediately for planting via the standard `PLANT` message.
+
+### Error Responses
+
+**Not enough gold:**
+```json
+{
+  "type": "ERROR",
+  "code": "INSUFFICIENT_GOLD",
+  "message": "Not enough gold to buy this plot",
+  "details": { "deedType": "plot:deed_t1", "need": 650 }
+}
+```
+
+**Plot cap already reached for this tier:**
+```json
+{
+  "type": "ERROR",
+  "code": "PLOT_CAP_REACHED",
+  "message": "You have reached the maximum plots for this deed tier",
+  "details": { "deedType": "plot:deed_t1", "maxOwnedPlots": 8, "currentPlots": 8 }
+}
+```
+
+**Invalid payload:**
+```json
+{
+  "type": "ERROR",
+  "code": "BAD_REQUEST",
+  "message": "Invalid buy_plot payload"
+}
+```
+
+---
+
+## 7. Full wscat Session Example
 
 ```
 $ wscat --connect "ws://localhost:9001/ws?userId=farmer_001"
@@ -288,7 +369,7 @@ Connected (press CTRL+C to quit)
 
 ---
 
-## 6. Price Spread Reference (baseline before dynamic ticks)
+## 8. Price Spread Reference (baseline before dynamic ticks)
 
 All gold values shown are **approximate at runtime** — the pricing worker applies
 demand/scarcity/volatility and spread factors every tick.
@@ -309,7 +390,7 @@ demand/scarcity/volatility and spread factors every tick.
 
 ---
 
-## 7. Idempotency
+## 9. Idempotency
 
 Every trade request requires a unique `requestId`. If the same `requestId` is sent again
 within the TTL window (default 60 s), the server silently accepts it without double-executing

@@ -31,6 +31,7 @@ export type WsInboundMessage =
   | { type: "VIEW_MEMBER_CONTRIBUTION"; payload: unknown }
   | { type: "VIEW_LEADERBOARD"; payload: unknown }
   | { type: "GET_GAME_STATE"; payload?: unknown }
+  | { type: "BUY_PLOT"; payload: unknown }
   | { type: "PING"; payload?: unknown };
 
 export type WsOutboundMessage =
@@ -62,6 +63,7 @@ export type WsOutboundMessage =
   | { type: "VIEW_COMMODITY_BANK_OK"; data: unknown }
   | { type: "VIEW_MEMBER_CONTRIBUTION_OK"; data: unknown }
   | { type: "VIEW_LEADERBOARD_OK"; data: unknown }
+  | { type: "BUY_PLOT_OK"; data: { newPlotId: number; goldSpent: number; deedType: string } }
   | { type: "AI_EVENT"; data: unknown }
   | {
       type: "GAME_STATUS";
