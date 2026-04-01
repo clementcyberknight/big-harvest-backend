@@ -5,6 +5,9 @@ import { CRAFT_RECIPES } from "../../modules/crafting/crafting.recipes.js";
 import { REFERENCE_GOLD } from "../../modules/economy/referencePrices.js";
 import {
   STARTER_GOLD,
+  MAX_PLOTS_PER_PLAYER,
+  PLOT_PURCHASE_BASE_GOLD,
+  PLOT_PURCHASE_STEP_GOLD,
   STARTER_WHEAT_SEEDS,
   STARTER_PLOT_IDS,
   PRICE_MICRO_PER_GOLD,
@@ -104,8 +107,14 @@ function buildCatalog() {
   const plots = {
     starterPlots: STARTER_PLOT_IDS.length,
     starterPlotIds: STARTER_PLOT_IDS,
-    purchasable: false,
-    note: "Plots are only acquired via the new-player starter grant. Additional plots can be unlocked in future updates.",
+    purchasable: true,
+    maxPlots: MAX_PLOTS_PER_PLAYER,
+    purchaseBaseGold: PLOT_PURCHASE_BASE_GOLD,
+    purchaseStepGold: PLOT_PURCHASE_STEP_GOLD,
+    pricingFormula:
+      "nextPlotGold = purchaseBaseGold + ((nextPlotId - starterPlots) * purchaseStepGold)",
+    note:
+      "Plots are granted at onboarding, and extra plots can now be purchased sequentially after the starter grant.",
     loanCollateralValueGold: LOAN_PLOT_COLLATERAL_GOLD,
   };
 
@@ -146,7 +155,7 @@ function buildCatalog() {
   // --- Pricing system ---
   const pricing = {
     microGoldPerGold: PRICE_MICRO_PER_GOLD,
-    note: "All prices are base / reference values in whole gold. Live prices are dynamic and returned via BUY_OK / SELL_OK priceMicro field.",
+    note: "All catalog prices are base / reference values in whole gold. Live GAME_STATUS prices are rounded to 2 decimal gold units, while BUY_OK / SELL_OK keep priceMicro for exact settlement.",
     dynamicTickMs: 7000,
     demandClamp: [0.25, 4],
     scarcityClamp: [0.5, 3],

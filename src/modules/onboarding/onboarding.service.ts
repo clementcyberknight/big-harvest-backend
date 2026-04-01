@@ -8,6 +8,7 @@ import {
   accountInitKey,
   inventoryKey,
   ownedPlotsKey,
+  plotSeqKey,
   seedInventoryField,
   treasuryReserveKey,
   walletKey,
@@ -31,6 +32,7 @@ export class OnboardingService {
           invKey: inventoryKey(userId),
           plotsKey: ownedPlotsKey(userId),
           reserveKey: treasuryReserveKey(),
+          plotSeqKey: plotSeqKey(userId),
         },
         {
           starterGold: STARTER_GOLD,

@@ -26,6 +26,10 @@ export function plotsLockedKey(userId: string): string {
   return `ravolo:${userTag(userId)}:plots_locked`;
 }
 
+export function plotSeqKey(userId: string): string {
+  return `ravolo:${userTag(userId)}:plot_seq`;
+}
+
 export function walletKey(userId: string): string {
   return `ravolo:${userTag(userId)}:wallet`;
 }
@@ -52,6 +56,10 @@ export function sellIdempotencyKey(userId: string, requestId: string): string {
 
 export function buyIdempotencyKey(userId: string, requestId: string): string {
   return `ravolo:${userTag(userId)}:idemp:buy:${requestId}`;
+}
+
+export function buyPlotIdempotencyKey(userId: string, requestId: string): string {
+  return `ravolo:${userTag(userId)}:idemp:buy_plot:${requestId}`;
 }
 
 export function loanActiveKey(userId: string): string {

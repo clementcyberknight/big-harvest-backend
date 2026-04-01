@@ -3,6 +3,7 @@ import type { Redis } from "ioredis";
 import { logger } from "../../infrastructure/logger/logger.js";
 import type { AnimalService } from "../../modules/animal/animal.service.js";
 import type { CraftingService } from "../../modules/crafting/crafting.service.js";
+import type { FarmService } from "../../modules/farm/farm.service.js";
 import type { HarvestingService } from "../../modules/harvesting/harvesting.service.js";
 import type { LoanService } from "../../modules/loan/loan.service.js";
 import type { MarketService } from "../../modules/market/market.service.js";
@@ -14,6 +15,7 @@ import {
   handleAnimalHarvest,
 } from "./handlers/animal.handler.js";
 import { handleBuy } from "./handlers/buy.handler.js";
+import { handleBuyPlot } from "./handlers/buyPlot.handler.js";
 import { handleCraftClaim, handleCraftStart } from "./handlers/crafting.handler.js";
 import { handleLoanOpen, handleLoanRepay } from "./handlers/loan.handler.js";
 import { handleHarvest } from "./handlers/harvest.handler.js";
@@ -48,6 +50,7 @@ import type { WsUserData } from "./ws.types.js";
 export type WsGameContext = {
   redis: Redis;
   planting: PlantingService;
+  farm: FarmService;
   harvesting: HarvestingService;
   market: MarketService;
   loan: LoanService;
@@ -93,6 +96,9 @@ export async function dispatchWsMessage(
       return;
     case "BUY":
       await handleBuy(ws, msg.payload, ctx.market, ctx.userActions);
+      return;
+    case "BUY_PLOT":
+      await handleBuyPlot(ws, msg.payload, ctx.redis, ctx.farm, ctx.userActions);
       return;
     case "LOAN_OPEN":
       await handleLoanOpen(ws, msg.payload, ctx.loan, ctx.userActions);

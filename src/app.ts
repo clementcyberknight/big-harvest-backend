@@ -7,6 +7,7 @@ import { logger } from "./infrastructure/logger/logger.js";
 import { AuthService } from "./modules/auth/auth.service.js";
 import { AnimalService } from "./modules/animal/animal.service.js";
 import { CraftingService } from "./modules/crafting/crafting.service.js";
+import { FarmService } from "./modules/farm/farm.service.js";
 import { OnboardingService } from "./modules/onboarding/onboarding.service.js";
 import { HarvestingService } from "./modules/harvesting/harvesting.service.js";
 import { LoanService } from "./modules/loan/loan.service.js";
@@ -51,6 +52,7 @@ export async function startApp(): Promise<AppInstance> {
   await runPricingTick(redis);
 
   const market = new MarketService(redis);
+  const farm = new FarmService(redis);
   const loan = new LoanService(redis);
   const animals = new AnimalService(redis);
   const crafting = new CraftingService(redis);
@@ -65,6 +67,7 @@ export async function startApp(): Promise<AppInstance> {
   const ctx: WsAppContext = {
     redis,
     planting: new PlantingService(redis),
+    farm,
     harvesting: new HarvestingService(redis),
     market,
     loan,

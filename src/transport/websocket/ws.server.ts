@@ -4,6 +4,7 @@ import { env } from "../../config/env.js";
 import { logger } from "../../infrastructure/logger/logger.js";
 import { getActiveEvent } from "../../modules/ai-events/event.service.js";
 import { verifyAccessToken } from "../../modules/auth/jwt.js";
+import { getGameStatusPlotsData } from "../../modules/farm/farm.service.js";
 import { marketStatusToGoldUnits } from "../../modules/market/market.types.js";
 import {
   registerAuthHttp,
@@ -17,6 +18,8 @@ import type { WsOutboundMessage, WsUserData } from "./ws.types.js";
 
 // Global reference for broadcasting outside WS handlers (e.g. workers)
 let globalApp: ReturnType<typeof App> | null = null;
+
+const GAME_STATUS_PLOTS = getGameStatusPlotsData();
 
 export function broadcastToSyndicate(
   syndicateId: string,
@@ -43,6 +46,7 @@ export async function broadcastGameStatus(ctx: WsAppContext) {
       type: "GAME_STATUS",
       data: {
         prices: marketStatusToGoldUnits(prices),
+        plots: GAME_STATUS_PLOTS,
         activeEvent,
         serverNowMs: serverNowMs(),
       },
@@ -142,6 +146,7 @@ export function createWsApp(ctx: WsAppContext) {
             type: "GAME_STATUS",
             data: {
               prices: marketStatusToGoldUnits(prices),
+              plots: GAME_STATUS_PLOTS,
               activeEvent,
               serverNowMs: serverNowMs(),
             },

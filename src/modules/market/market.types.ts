@@ -30,7 +30,7 @@ export type MarketStatusGold = Record<string, MarketPriceGold>;
 
 export function toGoldUnits(priceMicro: number | null): number | null {
   if (priceMicro === null) return null;
-  return priceMicro / PRICE_MICRO_PER_GOLD;
+  return Math.round((priceMicro / PRICE_MICRO_PER_GOLD) * 100) / 100;
 }
 
 export function marketStatusToGoldUnits(status: MarketStatus): MarketStatusGold {

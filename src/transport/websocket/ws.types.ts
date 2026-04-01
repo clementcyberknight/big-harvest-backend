@@ -6,6 +6,7 @@ export type WsInboundMessage =
   | { type: "HARVEST"; payload: unknown }
   | { type: "SELL"; payload: unknown }
   | { type: "BUY"; payload: unknown }
+  | { type: "BUY_PLOT"; payload: unknown }
   | { type: "LOAN_OPEN"; payload: unknown }
   | { type: "LOAN_REPAY"; payload: unknown }
   | { type: "ANIMAL_FEED"; payload: unknown }
@@ -38,6 +39,7 @@ export type WsOutboundMessage =
   | { type: "HARVEST_OK"; requestEcho?: string; data: unknown }
   | { type: "SELL_OK"; data: unknown }
   | { type: "BUY_OK"; data: unknown }
+  | { type: "BUY_PLOT_OK"; data: unknown }
   | { type: "LOAN_OPEN_OK"; data: unknown }
   | { type: "LOAN_REPAY_OK"; data: unknown }
   | { type: "ANIMAL_FEED_OK"; data: unknown }
@@ -67,6 +69,17 @@ export type WsOutboundMessage =
       type: "GAME_STATUS";
       data: {
         prices: import("../../modules/market/market.types.js").MarketStatusGold;
+        plots: {
+          starterPlots: number;
+          starterPlotIds: number[];
+          purchasable: boolean;
+          maxPlots: number;
+          purchaseBaseGold: number;
+          purchaseStepGold: number;
+          pricingFormula: string;
+          loanCollateralValueGold: number;
+          note: string;
+        };
         activeEvent: any | null;
         serverNowMs: number;
       };

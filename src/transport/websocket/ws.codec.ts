@@ -42,6 +42,7 @@ function normalizeInbound(o: unknown): WsInboundMessage | null {
     type === "HARVEST" ||
     type === "SELL" ||
     type === "BUY" ||
+    type === "BUY_PLOT" ||
     type === "LOAN_OPEN" ||
     type === "LOAN_REPAY" ||
     type === "ANIMAL_FEED" ||

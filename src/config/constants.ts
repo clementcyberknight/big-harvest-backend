@@ -13,6 +13,12 @@ export const STARTER_GOLD = 250;
 export const STARTER_WHEAT_SEEDS = 2;
 /** Plot indices granted on first join (4 plots). */
 export const STARTER_PLOT_IDS = [0, 1, 2, 3] as const;
+/** Maximum number of plots a player can own or lock as collateral. */
+export const MAX_PLOTS_PER_PLAYER = 32;
+/** Cost of the first purchased plot after the starter grant. */
+export const PLOT_PURCHASE_BASE_GOLD = 300;
+/** Additional gold added for each later plot purchase. */
+export const PLOT_PURCHASE_STEP_GOLD = 100;
 
 /**
  * Price is stored as micro-gold per 1 unit (1000 micro = 1 gold).
@@ -37,7 +43,7 @@ export const SCARCITY_TOTAL_UNITS = 1_000_000;
  * Sell price (player receives CBN)  = mid × SPREAD_SELL_FACTOR  (<1 → earns less)
  * This guarantees buy > sell at all times, preventing arbitrage loops.
  */
-export const SPREAD_BUY_FACTOR = 1.30;  // player pays 30 % above mid
+export const SPREAD_BUY_FACTOR = 1.3; // player pays 30 % above mid
 export const SPREAD_SELL_FACTOR = 0.75; // player receives 25 % below mid
 
 /** Maximum members per syndicate. */

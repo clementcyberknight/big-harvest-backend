@@ -35,6 +35,7 @@ let harvestSha: string | null = null;
 let onboardSha: string | null = null;
 let sellSha: string | null = null;
 let buySha: string | null = null;
+let buyPlotSha: string | null = null;
 let loanOpenSha: string | null = null;
 let loanRepaySha: string | null = null;
 let animalFeedSha: string | null = null;
@@ -57,6 +58,7 @@ export async function loadRedisScripts(redis: Redis): Promise<void> {
   const onboardSrc = readFileSync(resolveLuaFile("onboarding.lua"), "utf8");
   const sellSrc = readFileSync(resolveLuaFile("treasurySell.lua"), "utf8");
   const buySrc = readFileSync(resolveLuaFile("treasuryBuy.lua"), "utf8");
+  const buyPlotSrc = readFileSync(resolveLuaFile("buyPlot.lua"), "utf8");
   const loanOpenSrc = readFileSync(resolveLuaFile("loanOriginate.lua"), "utf8");
   const loanRepaySrc = readFileSync(resolveLuaFile("loanRepay.lua"), "utf8");
   const animalFeedSrc = readFileSync(resolveLuaFile("animalFeed.lua"), "utf8");
@@ -105,6 +107,7 @@ export async function loadRedisScripts(redis: Redis): Promise<void> {
   onboardSha = (await redis.script("LOAD", onboardSrc)) as string;
   sellSha = (await redis.script("LOAD", sellSrc)) as string;
   buySha = (await redis.script("LOAD", buySrc)) as string;
+  buyPlotSha = (await redis.script("LOAD", buyPlotSrc)) as string;
   loanOpenSha = (await redis.script("LOAD", loanOpenSrc)) as string;
   loanRepaySha = (await redis.script("LOAD", loanRepaySrc)) as string;
   animalFeedSha = (await redis.script("LOAD", animalFeedSrc)) as string;
@@ -302,6 +305,7 @@ export async function redisOnboard(
     invKey: string;
     plotsKey: string;
     reserveKey: string;
+    plotSeqKey: string;
   },
   args: {
     starterGold: number;
@@ -314,12 +318,13 @@ export async function redisOnboard(
   try {
     const res = (await redis.evalsha(
       onboardSha,
-      5,
+      6,
       keys.accountInitKey,
       keys.walletKey,
       keys.invKey,
       keys.plotsKey,
       keys.reserveKey,
+      keys.plotSeqKey,
       String(args.starterGold),
       args.seedField,
       String(args.seedCount),
@@ -342,6 +347,11 @@ export type TreasuryTradeScriptResult = {
   gold: number;
 };
 
+export type BuyPlotScriptResult = {
+  plotId: number;
+  gold: number;
+};
+
 function parseTreasuryPayload(raw: string): TreasuryTradeScriptResult {
   const parts = raw.split("|");
   if (parts[0] !== "OK" || parts.length !== 4) {
@@ -351,6 +361,17 @@ function parseTreasuryPayload(raw: string): TreasuryTradeScriptResult {
     item: parts[1]!,
     quantity: Number(parts[2]),
     gold: Number(parts[3]),
+  };
+}
+
+function parseBuyPlotPayload(raw: string): BuyPlotScriptResult {
+  const parts = raw.split("|");
+  if (parts[0] !== "OK" || parts.length !== 3) {
+    throw new Error(`Invalid buy plot payload: ${raw}`);
+  }
+  return {
+    plotId: Number(parts[1]),
+    gold: Number(parts[2]),
   };
 }
 
@@ -447,6 +468,53 @@ export async function redisTreasuryBuy(
     if (isReplyError(e) && e.message.includes("NOSCRIPT")) {
       await loadRedisScripts(redis);
       return redisTreasuryBuy(redis, keys, args);
+    }
+    throw e;
+  }
+}
+
+export async function redisBuyPlot(
+  redis: Redis,
+  keys: {
+    walletKey: string;
+    plotsKey: string;
+    plotsLockedKey: string;
+    plotSeqKey: string;
+    idempKey: string;
+    reserveKey: string;
+  },
+  args: {
+    starterPlotCount: number;
+    maxPlots: number;
+    baseGold: number;
+    stepGold: number;
+    idempTtlSec: number;
+    plotKeyPrefix: string;
+  },
+): Promise<BuyPlotScriptResult> {
+  if (!buyPlotSha) throw new Error("Redis scripts not loaded");
+  try {
+    const res = (await redis.evalsha(
+      buyPlotSha,
+      6,
+      keys.walletKey,
+      keys.plotsKey,
+      keys.plotsLockedKey,
+      keys.plotSeqKey,
+      keys.idempKey,
+      keys.reserveKey,
+      String(args.starterPlotCount),
+      String(args.maxPlots),
+      String(args.baseGold),
+      String(args.stepGold),
+      String(args.idempTtlSec),
+      args.plotKeyPrefix,
+    )) as string;
+    return parseBuyPlotPayload(res);
+  } catch (e) {
+    if (isReplyError(e) && e.message.includes("NOSCRIPT")) {
+      await loadRedisScripts(redis);
+      return redisBuyPlot(redis, keys, args);
     }
     throw e;
   }
