@@ -1,6 +1,6 @@
 import type { Redis } from "ioredis";
 import { serverNowMs } from "../../shared/utils/time.js";
-import { buyCostGold, sellPayoutGold } from "../../shared/utils/gold.js";
+import { buyCostGold, sellPayoutGold, toSafeGold } from "../../shared/utils/gold.js";
 import { AppError } from "../../shared/errors/appError.js";
 import {
   buyIdempotencyKey,
@@ -149,9 +149,9 @@ export class MarketService {
     // Use the SELL price (what the CBN pays the player — lower side of spread)
     let priceMicro = await this.sellPriceMicroFor(item);
 
-    // Apply AI event multiplier
+    // Apply AI event multiplier — floor to integer; Lua HINCRBY requires integers
     const eventMul = await getEventMultiplier(this.redis, item);
-    priceMicro = Math.max(1, Math.round(priceMicro * eventMul));
+    priceMicro = Math.max(1, Math.floor(priceMicro * eventMul));
 
     let goldPaid = sellPayoutGold(priceMicro, quantity);
 
@@ -160,9 +160,12 @@ export class MarketService {
     if (sid) {
       const penalized = await this.redis.get(syndicateTaxPenaltyKey(sid));
       if (penalized === "1") {
-        goldPaid = Math.floor(goldPaid * 0.8); // 20% tax cut
+        goldPaid = toSafeGold(goldPaid * 0.8); // 20% tax cut, always integer
       }
     }
+
+    // Hard clamp: must be a non-negative integer before it reaches Lua
+    goldPaid = toSafeGold(goldPaid);
 
     if (goldPaid < 0) {
       throw new AppError("BAD_REQUEST", "Invalid settlement", { item, quantity });
@@ -230,9 +233,9 @@ export class MarketService {
     // Use the BUY price (what the player pays the CBN — higher side of spread)
     let priceMicro = await this.buyPriceMicroFor(item);
 
-    // Apply AI event multiplier
+    // Apply AI event multiplier — floor to integer; Lua HINCRBY requires integers
     const eventMul = await getEventMultiplier(this.redis, item);
-    priceMicro = Math.max(1, Math.round(priceMicro * eventMul));
+    priceMicro = Math.max(1, Math.floor(priceMicro * eventMul));
 
     let goldSpent = buyCostGold(priceMicro, quantity);
 
@@ -241,9 +244,12 @@ export class MarketService {
     if (sid) {
       const penalized = await this.redis.get(syndicateTaxPenaltyKey(sid));
       if (penalized === "1") {
-        goldSpent = Math.floor(goldSpent * 1.2); // 20% increased cost
+        goldSpent = toSafeGold(Math.ceil(goldSpent * 1.2)); // 20% increased cost, always integer
       }
     }
+
+    // Hard clamp: must be a non-negative integer before it reaches Lua
+    goldSpent = toSafeGold(goldSpent);
 
     if (goldSpent < 0) {
       throw new AppError("BAD_REQUEST", "Invalid cost", { item, quantity });
