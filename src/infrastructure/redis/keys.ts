@@ -159,6 +159,22 @@ export function userActionsQueueKey(): string {
   return "ravolo:user_actions:queue";
 }
 
+export function aiEventActiveKey(): string {
+  return "ravolo:ai:event:active";
+}
+
+export function aiEventPressureKey(): string {
+  return "ravolo:ai:pressure";
+}
+
+export function aiEventCooldownKey(tier: "micro" | "minor" | "medium" | "major"): string {
+  return `ravolo:ai:cooldown:${tier}`;
+}
+
+export function aiEventHistoryKey(): string {
+  return "ravolo:ai:event:history";
+}
+
 // --- Syndicates ---
 
 export function userSyndicateIdKey(userId: string): string {

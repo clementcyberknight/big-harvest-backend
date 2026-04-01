@@ -1,54 +1,30 @@
 import type { Redis } from "ioredis";
 import { logger } from "../infrastructure/logger/logger.js";
 import {
-  detectPriceDeviations,
-  checkGoldBalance,
-  generateAiEvent,
-  setActiveEvent,
+  collectAiSignals,
+  commitAiEvent,
+  decideEventTier,
+  generateFastEvent,
+  generateNarrativeAiEvent,
+  getAiEventHistory,
+  getAiPressure,
   getActiveEvent,
+  getTierCooldownTtl,
+  resetPressureAfterEvent,
+  setAiPressure,
+  computeNextPressure,
 } from "../modules/ai-events/event.service.js";
-import type {
-  AiEventContext,
-  GenerateAiEventResult,
-} from "../modules/ai-events/event.service.js";
-import type { MarketEvent } from "../modules/ai-events/event.types.js";
-import { AnalyticsService } from "../modules/analytics/analytics.service.js";
-
-const DEVIATION_CHECK_MS = 60 * 1000;
-const DEVIATION_THRESHOLD_PCT = 60;
+import type { AiEventTier, MarketEvent } from "../modules/ai-events/event.types.js";
+import { AI_EVENT_TICK_MS } from "../config/constants.js";
 
 export type AiEventBroadcaster = (event: MarketEvent) => void | Promise<void>;
 
 let broadcaster: AiEventBroadcaster | null = null;
 
-function logAiEventGenerationSkip(
-  result: Extract<GenerateAiEventResult, { ok: false }>,
-): void {
-  if (result.reason === "cooldown_active") {
-    logger.info(
-      result.details,
-      "[ai-events] AI event generation skipped: cooldown active",
-    );
-    return;
-  }
-
-  if (result.reason === "missing_api_key") {
-    logger.warn(
-      "[ai-events] AI event generation skipped: XAI_API_KEY not configured",
-    );
-    return;
-  }
-
-  if (result.reason === "invalid_affected_items") {
-    logger.warn(
-      result.details,
-      "[ai-events] AI event generation failed: AI returned no valid commodity IDs",
-    );
-    return;
-  }
-
-  logger.error(
-    "[ai-events] AI event generation failed: provider request error",
+function logTierCooldownSkip(tier: AiEventTier, ttl: number, pressure: number): void {
+  logger.info(
+    { tier, remainingSeconds: ttl, pressure },
+    "[ai-events] Tier cooldown active, skipping event generation",
   );
 }
 
@@ -66,60 +42,131 @@ export async function runAiEventTick(redis: Redis): Promise<void> {
     return;
   }
 
-  const deviations = await detectPriceDeviations(redis, DEVIATION_THRESHOLD_PCT);
-  const goldBalance = await checkGoldBalance(redis);
+  const signal = await collectAiSignals(redis);
+  const previousPressure = await getAiPressure(redis);
+  const nextPressure = computeNextPressure(previousPressure.value, signal);
 
-  const analytics = new AnalyticsService(redis);
-  const anomalies = await analytics.runPeriodicAnalysis();
+  await setAiPressure(redis, {
+    value: nextPressure,
+    updatedAtMs: Date.now(),
+  });
 
-  const hasDeviations = deviations.length > 0;
-  const hasGoldIssue = goldBalance.needsInjection || goldBalance.needsDrain;
-  const hasAnomalies = anomalies.length > 0;
+  if (signal.pressureDelta <= 0 && nextPressure === 0) {
+    logger.debug("[ai-events] No meaningful event pressure detected");
+    return;
+  }
 
-  if (!hasDeviations && !hasGoldIssue && !hasAnomalies) {
+  const tierDecision = decideEventTier(nextPressure);
+  if (tierDecision.tier === "none") {
     logger.debug(
-      "[ai-events] No deviations, gold issues, or anomalies detected",
+      { pressure: nextPressure, signalDelta: signal.pressureDelta },
+      "[ai-events] Pressure below event threshold",
     );
     return;
   }
 
-  let trigger: AiEventContext["anomalies"] extends infer _ ? "price_deviation" | "gold_imbalance" | "analytics_anomaly" : never = "price_deviation";
-  if (hasAnomalies) trigger = "analytics_anomaly";
-  else if (hasGoldIssue) trigger = "gold_imbalance";
+  const tier = tierDecision.tier;
+  const cooldownTtl = await getTierCooldownTtl(redis, tier);
+  if (cooldownTtl > 0) {
+    logTierCooldownSkip(tier, cooldownTtl, nextPressure);
+    return;
+  }
+
+  const history = await getAiEventHistory(redis);
+  const trigger =
+    signal.dominantType === "analytics_anomaly"
+      ? "analytics_anomaly"
+      : signal.dominantType === "gold_imbalance"
+        ? "gold_imbalance"
+        : signal.dominantType === "price_deviation"
+          ? "price_deviation"
+          : "pressure_release";
+  const nowMs = Date.now();
 
   logger.info(
-    { trigger, deviationCount: deviations.length, reservePct: goldBalance.reservePct.toFixed(1) },
-    "[ai-events] Triggering AI event generation",
+    {
+      tier,
+      pressure: nextPressure,
+      signalDelta: signal.pressureDelta,
+      dominantType: signal.dominantType,
+      drivers: signal.drivers,
+    },
+    "[ai-events] Event tier selected",
   );
 
-  const ctx: AiEventContext = {
-    deviations: hasDeviations ? deviations : undefined,
-    goldBalance: hasGoldIssue ? goldBalance : undefined,
-    anomalies: hasAnomalies
-      ? anomalies.map((a) => ({ type: a.type, itemId: a.itemId, entityId: a.entityId, description: a.description }))
-      : undefined,
-  };
+  const generated =
+    tier === "major"
+      ? await generateNarrativeAiEvent(redis, {
+          tier,
+          trigger,
+          pressure: nextPressure,
+          signal,
+          nowMs,
+          history,
+        })
+      : await generateFastEvent(redis, {
+          tier,
+          trigger,
+          pressure: nextPressure,
+          signal,
+          nowMs,
+          history,
+        });
 
-  const result = await generateAiEvent(redis, trigger, ctx);
-
-  if (result.ok) {
-    const { event } = result;
-    await setActiveEvent(redis, event);
-    const emoji =
-      event.outcome === "boycott" ? "🚫" : event.outcome === "surge" ? "📈" : "📉";
+  if (!generated) {
     logger.info(
-      {
-        id: event.id,
-        title: event.title,
-        outcome: event.outcome,
-        multiplier: event.multiplier,
-        items: event.affectedItems,
-      },
-      `[ai-events] ${emoji} Event triggered: "${event.title}"`,
+      { tier, pressure: nextPressure },
+      "[ai-events] Fast event generation returned no valid event",
     );
-    if (broadcaster) await broadcaster(event);
-  } else {
-    logAiEventGenerationSkip(result);
+    return;
+  }
+
+  if ("ok" in generated && !generated.ok) {
+    if (generated.reason === "missing_api_key") {
+      logger.warn("[ai-events] Major event generation skipped: XAI_API_KEY not configured");
+      return;
+    }
+    if (generated.reason === "repetition_blocked") {
+      logger.info(
+        { tier, pressure: nextPressure },
+        "[ai-events] Major event blocked by repetition guard",
+      );
+      return;
+    }
+    logger.warn(
+      { reason: generated.reason, details: generated.details },
+      "[ai-events] Major event generation failed",
+    );
+    return;
+  }
+
+  const event = generated.event;
+  const templateKey = "templateKey" in generated ? generated.templateKey : null;
+  const pressureAfterEvent = resetPressureAfterEvent(nextPressure, event.tier);
+
+  await commitAiEvent(redis, event, pressureAfterEvent, templateKey);
+
+  const emoji =
+    event.outcome === "boycott" ? "🚫" : event.outcome === "surge" ? "📈" : "📉";
+  logger.info(
+    {
+      id: event.id,
+      title: event.title,
+      tier: event.tier,
+      outcome: event.outcome,
+      multiplier: event.multiplier,
+      items: event.affectedItems,
+      pressureBeforeReset: nextPressure,
+      pressureAfterReset: pressureAfterEvent,
+    },
+    `[ai-events] ${emoji} Event triggered: "${event.title}"`,
+  );
+  if (broadcaster) {
+    await broadcaster(event);
+    logger.info(
+      { eventId: event.id, tier: event.tier },
+      "[ai-events] Broadcast sent to connected clients",
+    );
   }
 }
 
@@ -130,6 +177,6 @@ export function startAiEventLoop(redis: Redis): () => void {
     });
   };
   setTimeout(tick, 10_000);
-  const id = setInterval(tick, DEVIATION_CHECK_MS);
+  const id = setInterval(tick, AI_EVENT_TICK_MS);
   return () => clearInterval(id);
 }

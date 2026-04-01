@@ -28,6 +28,29 @@ export const PRICE_MICRO_PER_GOLD = 1000;
 
 /** Dynamic pricing tick (ms). Keep between 5–10s per design. */
 export const PRICING_TICK_MS = 7000;
+export const AI_EVENT_TICK_MS = 60 * 1000;
+export const AI_EVENT_ACTIVE_TTL_SEC = 30 * 60;
+export const AI_PRESSURE_MAX = 1000;
+export const AI_PRESSURE_DECAY_PER_TICK = 40;
+export const AI_EVENT_PRESSURE_THRESHOLDS = {
+  micro: 150,
+  minor: 300,
+  medium: 600,
+  major: 850,
+} as const;
+export const AI_TIER_COOLDOWN_SEC = {
+  micro: 3 * 60,
+  minor: 10 * 60,
+  medium: 25 * 60,
+  major: 60 * 60,
+} as const;
+export const AI_PRESSURE_RESET_BPS = {
+  micro: 8500,
+  minor: 6500,
+  medium: 5000,
+  major: 3500,
+} as const;
+export const AI_EVENT_HISTORY_LIMIT = 24;
 
 /** Clamp multipliers applied in pricing engine. */
 export const PRICE_DEMAND_CLAMP: [number, number] = [0.25, 4];
