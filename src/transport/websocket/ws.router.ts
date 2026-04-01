@@ -20,6 +20,7 @@ import { handleHarvest } from "./handlers/harvest.handler.js";
 import { handlePlant } from "./handlers/plant.handler.js";
 import { handleSell } from "./handlers/sell.handler.js";
 import { handleViewLeaderboard } from "./handlers/leaderboard.handler.js";
+import { handleGetGameState } from "./handlers/gameState.handler.js";
 import type { LeaderboardService } from "../../modules/leaderboard/leaderboard.service.js";
 import {
   handleAcceptRequest,
@@ -164,6 +165,9 @@ export async function dispatchWsMessage(
       return;
     case "VIEW_LEADERBOARD":
       await handleViewLeaderboard(ws, msg.payload, ctx);
+      return;
+    case "GET_GAME_STATE":
+      await handleGetGameState(ws, ctx.redis);
       return;
     default:
       logger.warn({ msg }, "unhandled ws message type");
