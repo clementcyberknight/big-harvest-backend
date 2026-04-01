@@ -4,6 +4,7 @@ import { env } from "../../config/env.js";
 import { logger } from "../../infrastructure/logger/logger.js";
 import { getActiveEvent } from "../../modules/ai-events/event.service.js";
 import { verifyAccessToken } from "../../modules/auth/jwt.js";
+import { marketStatusToGoldUnits } from "../../modules/market/market.types.js";
 import {
   registerAuthHttp,
   type AuthHttpDeps,
@@ -40,7 +41,11 @@ export async function broadcastGameStatus(ctx: WsAppContext) {
     ]);
     broadcastToAll({
       type: "GAME_STATUS",
-      data: { prices, activeEvent, serverNowMs: serverNowMs() },
+      data: {
+        prices: marketStatusToGoldUnits(prices),
+        activeEvent,
+        serverNowMs: serverNowMs(),
+      },
     });
   } catch (err) {
     logger.error({ err }, "failed to broadcast game status");
@@ -135,7 +140,11 @@ export function createWsApp(ctx: WsAppContext) {
 
           sendGameMessage(ws, {
             type: "GAME_STATUS",
-            data: { prices, activeEvent, serverNowMs: serverNowMs() },
+            data: {
+              prices: marketStatusToGoldUnits(prices),
+              activeEvent,
+              serverNowMs: serverNowMs(),
+            },
           });
 
           sendGameMessage(ws, {

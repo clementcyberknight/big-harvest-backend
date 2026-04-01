@@ -66,7 +66,7 @@ export type WsOutboundMessage =
   | {
       type: "GAME_STATUS";
       data: {
-        prices: import("../../modules/market/market.types.js").MarketStatus;
+        prices: import("../../modules/market/market.types.js").MarketStatusGold;
         activeEvent: any | null;
         serverNowMs: number;
       };
