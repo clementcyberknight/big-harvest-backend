@@ -194,7 +194,7 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function tierMultiplier(
-  tier: Exclude<AiEventTier, "major">,
+  tier: Exclude<AiEventTier, "medium" | "major">,
   template: keyof typeof FAST_EVENT_TEMPLATES,
 ): number {
   return FAST_EVENT_TEMPLATES[template].multiplierByTier[tier];
@@ -595,7 +595,7 @@ ${devLines || "- none"}
 Anomalies:
 ${anomalyLines || "- none"}
 
-Generate ONE major market event. It should feel narrative, dramatic, and corrective for the economy.
+Generate ONE ${input.tier} market event. It should feel narrative, dramatic, and corrective for the economy.
 Do not repeat the same affected items or same tone as the recent history if possible.
 Use only listed commodity IDs.`;
 
@@ -631,7 +631,7 @@ Use only listed commodity IDs.`;
     multiplier: normalizeTemplateMultiplier(objectResult.outcome, objectResult.impact_multiplier),
     playerTip: objectResult.player_tip,
     trigger: input.trigger,
-    tier: "major",
+    tier: input.tier,
     startsAtMs: input.nowMs,
     expiresAtMs: input.nowMs + AI_EVENT_ACTIVE_TTL_SEC * 1000,
   };

@@ -95,7 +95,7 @@ export async function runAiEventTick(redis: Redis): Promise<void> {
   );
 
   const generated =
-    tier === "major"
+    tier === "medium" || tier === "major"
       ? await generateNarrativeAiEvent(redis, {
           tier,
           trigger,
@@ -123,19 +123,22 @@ export async function runAiEventTick(redis: Redis): Promise<void> {
 
   if ("ok" in generated && !generated.ok) {
     if (generated.reason === "missing_api_key") {
-      logger.warn("[ai-events] Major event generation skipped: XAI_API_KEY not configured");
+      logger.warn(
+        { tier },
+        "[ai-events] Narrative event generation skipped: XAI_API_KEY not configured",
+      );
       return;
     }
     if (generated.reason === "repetition_blocked") {
       logger.info(
         { tier, pressure: nextPressure },
-        "[ai-events] Major event blocked by repetition guard",
+        "[ai-events] Narrative event blocked by repetition guard",
       );
       return;
     }
     logger.warn(
-      { reason: generated.reason, details: generated.details },
-      "[ai-events] Major event generation failed",
+      { tier, reason: generated.reason, details: generated.details },
+      "[ai-events] Narrative event generation failed",
     );
     return;
   }

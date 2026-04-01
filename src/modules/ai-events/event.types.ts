@@ -92,7 +92,7 @@ export type AiEventHistoryEntry = {
 };
 
 export type GenerateFastEventInput = {
-  tier: Exclude<AiEventTier, "major">;
+  tier: Exclude<AiEventTier, "medium" | "major">;
   trigger: MarketEventTrigger;
   pressure: number;
   signal: AiSignalSnapshot;
@@ -101,7 +101,7 @@ export type GenerateFastEventInput = {
 };
 
 export type GenerateNarrativeAiEventInput = {
-  tier: "major";
+  tier: "medium" | "major";
   trigger: MarketEventTrigger;
   pressure: number;
   signal: AiSignalSnapshot;
