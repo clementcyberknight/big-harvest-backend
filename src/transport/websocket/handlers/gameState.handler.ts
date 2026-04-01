@@ -16,7 +16,6 @@ import {
   userSyndicateIdKey,
 } from "../../../infrastructure/redis/keys.js";
 import { serverNowMs } from "../../../shared/utils/time.js";
-import { PRICE_MICRO_PER_GOLD } from "../../../config/constants.js";
 
 /**
  * GET_GAME_STATE — returns the full snapshot of the authenticated player's state.
@@ -66,8 +65,10 @@ export async function handleGetGameState(
     ]);
 
     // ── Parse wallet ──────────────────────────────────────────────────────────
-    const goldMicro = Number(walletRaw?.gold ?? 0);
-    const gold = Math.floor(goldMicro / PRICE_MICRO_PER_GOLD);
+    // The Lua treasury scripts store gold as whole gold units (not micro-gold).
+    // HINCRBY KEYS[walletKey] 'gold' pay — where pay = sellPayoutGold() in whole gold.
+    // Do NOT divide by PRICE_MICRO_PER_GOLD here.
+    const gold = Math.max(0, Math.floor(Number(walletRaw?.gold ?? 0)));
 
     // ── Parse level ───────────────────────────────────────────────────────────
     const level = Number(levelRaw ?? 1);

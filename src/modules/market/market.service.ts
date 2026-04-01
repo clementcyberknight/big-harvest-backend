@@ -118,8 +118,9 @@ export class MarketService {
   }
 
   async getUserGold(userId: string): Promise<number> {
-    const gold = await this.redis.hget(walletKey(userId), "gold");
-    return Number(gold) || 0;
+    // Wallet stores whole gold units — the Lua scripts use HINCRBY with whole gold values.
+    const raw = await this.redis.hget(walletKey(userId), "gold");
+    return Math.max(0, Math.floor(Number(raw) || 0));
   }
 
   async getUserInventory(userId: string): Promise<Record<string, number>> {
