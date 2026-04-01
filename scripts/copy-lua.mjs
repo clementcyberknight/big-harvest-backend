@@ -17,6 +17,7 @@ for (const name of [
   "onboarding.lua",
   "treasurySell.lua",
   "treasuryBuy.lua",
+  "buyPlot.lua",
   "loanOriginate.lua",
   "loanRepay.lua",
   "animalFeed.lua",
