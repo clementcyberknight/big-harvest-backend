@@ -6,7 +6,8 @@ import {
   buyIdempotencyKey,
   inventoryKey,
   sellIdempotencyKey,
-  treasuryPricesKey,
+  treasuryBuyPricesKey,
+  treasurySellPricesKey,
   treasuryReserveKey,
   treasuryBuyFlowKey,
   treasurySellFlowKey,
@@ -19,6 +20,7 @@ import {
   isBuyableItem,
   isTreasurySellable,
   produceBasePriceMicro,
+  buyBasePriceMicro,
   PRICED_ITEM_IDS,
   resolveBaseMicro,
 } from "./market.catalog.js";
@@ -26,7 +28,7 @@ import { treasuryTradeSchema } from "./market.validator.js";
 import type { BuyResult, SellResult, MarketStatus } from "./market.types.js";
 import { OnboardingService } from "../onboarding/onboarding.service.js";
 import { redisTreasuryBuy, redisTreasurySell } from "../../infrastructure/redis/commands.js";
-import { IDEMPOTENCY_TTL_SEC } from "../../config/constants.js";
+import { IDEMPOTENCY_TTL_SEC, SPREAD_BUY_FACTOR, SPREAD_SELL_FACTOR } from "../../config/constants.js";
 import { getEventMultiplier, getActiveEvent } from "../ai-events/event.service.js";
 import { AnalyticsService } from "../analytics/analytics.service.js";
 import { userSyndicateIdKey, syndicateTaxPenaltyKey } from "../../infrastructure/redis/keys.js";
@@ -47,41 +49,68 @@ export class MarketService {
     return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1;
   }
 
-  private async priceMicroFor(item: string): Promise<number> {
-    const raw = await this.redis.hget(treasuryPricesKey(), item);
+  /** Returns the dynamic buy micro-price from Redis, falling back to the base reference. */
+  private async buyPriceMicroFor(item: string): Promise<number> {
+    const raw = await this.redis.hget(treasuryBuyPricesKey(), item);
     const n = Number(raw);
     if (Number.isFinite(n) && n >= 1) return Math.floor(n);
-    return 0;
+    // Fallback: apply spread to the base buy price
+    return Math.max(1, Math.round(buyBasePriceMicro(item) * SPREAD_BUY_FACTOR));
+  }
+
+  /** Returns the dynamic sell micro-price from Redis, falling back to the base reference. */
+  private async sellPriceMicroFor(item: string): Promise<number> {
+    const raw = await this.redis.hget(treasurySellPricesKey(), item);
+    const n = Number(raw);
+    if (Number.isFinite(n) && n >= 1) return Math.floor(n);
+    // Fallback: apply spread to the base sell price
+    return Math.max(1, Math.round(produceBasePriceMicro(item) * SPREAD_SELL_FACTOR));
   }
 
   async getAllPrices(): Promise<MarketStatus> {
-    const raw = await this.redis.hgetall(treasuryPricesKey());
+    const [rawBuy, rawSell] = await Promise.all([
+      this.redis.hgetall(treasuryBuyPricesKey()),
+      this.redis.hgetall(treasurySellPricesKey()),
+    ]);
     const activeEvent = await getActiveEvent(this.redis);
     const now = Date.now();
 
     const status: MarketStatus = {};
 
     for (const id of PRICED_ITEM_IDS) {
-      let priceMicro = Number(raw[id]) || 0;
-      if (priceMicro < 1) {
-        priceMicro = resolveBaseMicro(id);
+      // Resolve buy micro-price
+      let buyMicro = Number(rawBuy[id]) || 0;
+      if (buyMicro < 1) {
+        buyMicro = Math.max(1, Math.round(buyBasePriceMicro(id) * SPREAD_BUY_FACTOR));
       }
 
-      // Apply AI event multiplier
+      // Resolve sell micro-price
+      let sellMicro = Number(rawSell[id]) || 0;
+      if (sellMicro < 1) {
+        sellMicro = Math.max(1, Math.round(produceBasePriceMicro(id) * SPREAD_SELL_FACTOR));
+      }
+
+      // Apply AI event multiplier to both sides
       if (
         activeEvent &&
         now <= activeEvent.expiresAtMs &&
         activeEvent.affectedItems.includes(id)
       ) {
-        priceMicro = Math.max(1, Math.round(priceMicro * activeEvent.multiplier));
+        buyMicro = Math.max(1, Math.round(buyMicro * activeEvent.multiplier));
+        sellMicro = Math.max(1, Math.round(sellMicro * activeEvent.multiplier));
+      }
+
+      // Hard safety: buy must always be strictly greater than sell
+      if (buyMicro <= sellMicro) {
+        buyMicro = Math.max(sellMicro + 1, Math.round(sellMicro * 1.3));
       }
 
       const canBuy = isBuyableItem(id);
       const canSell = isTreasurySellable(id);
 
       status[id] = {
-        buy: canBuy ? priceMicro : null,
-        sell: canSell ? priceMicro : null,
+        buy: canBuy ? buyMicro : null,
+        sell: canSell ? sellMicro : null,
       };
     }
 
@@ -117,17 +146,15 @@ export class MarketService {
       throw new AppError("UNKNOWN_ITEM", "Item cannot be sold to treasury", { item });
     }
 
-    let priceMicro = await this.priceMicroFor(item);
-    if (priceMicro < 1) {
-      priceMicro = produceBasePriceMicro(item);
-    }
+    // Use the SELL price (what the CBN pays the player — lower side of spread)
+    let priceMicro = await this.sellPriceMicroFor(item);
 
     // Apply AI event multiplier
     const eventMul = await getEventMultiplier(this.redis, item);
     priceMicro = Math.max(1, Math.round(priceMicro * eventMul));
 
     let goldPaid = sellPayoutGold(priceMicro, quantity);
-    
+
     // Apply wash trade tax penalty if caught
     const sid = await this.redis.get(userSyndicateIdKey(userId));
     if (sid) {
@@ -200,8 +227,8 @@ export class MarketService {
       });
     }
 
-    let priceMicro = await this.priceMicroFor(item);
-    if (priceMicro < 1) priceMicro = entry.basePriceMicro;
+    // Use the BUY price (what the player pays the CBN — higher side of spread)
+    let priceMicro = await this.buyPriceMicroFor(item);
 
     // Apply AI event multiplier
     const eventMul = await getEventMultiplier(this.redis, item);

@@ -103,9 +103,19 @@ export function treasuryReserveKey(): string {
   return `ravolo:${TREASURY_HASH_TAG}:reserve`;
 }
 
-/** HASH field=item → micro price per unit. */
+/** HASH field=item → mid micro price per unit (used internally by pricing worker). */
 export function treasuryPricesKey(): string {
   return `ravolo:${TREASURY_HASH_TAG}:prices`;
+}
+
+/** HASH field=item → buy micro price per unit (what player pays to CBN). */
+export function treasuryBuyPricesKey(): string {
+  return `ravolo:${TREASURY_HASH_TAG}:prices_buy`;
+}
+
+/** HASH field=item → sell micro price per unit (what player receives from CBN). */
+export function treasurySellPricesKey(): string {
+  return `ravolo:${TREASURY_HASH_TAG}:prices_sell`;
 }
 
 /** HASH cumulative buy volumes (per tick window; worker may decay). */

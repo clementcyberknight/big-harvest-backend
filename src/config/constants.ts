@@ -28,8 +28,17 @@ export const PRICE_DEMAND_CLAMP: [number, number] = [0.25, 4];
 export const PRICE_SCARCITY_CLAMP: [number, number] = [0.5, 3];
 export const PRICE_VOLATILITY_CLAMP: [number, number] = [0.85, 1.35];
 
-/** Proxy “total supply” used in scarcity term (tunable macro constant). */
+/** Proxy "total supply" used in scarcity term (tunable macro constant). */
 export const SCARCITY_TOTAL_UNITS = 1_000_000;
+
+/**
+ * Market spread factors applied to the "mid" price each pricing tick.
+ * Buy price (player pays CBN)       = mid × SPREAD_BUY_FACTOR   (>1 → costs more)
+ * Sell price (player receives CBN)  = mid × SPREAD_SELL_FACTOR  (<1 → earns less)
+ * This guarantees buy > sell at all times, preventing arbitrage loops.
+ */
+export const SPREAD_BUY_FACTOR = 1.30;  // player pays 30 % above mid
+export const SPREAD_SELL_FACTOR = 0.75; // player receives 25 % below mid
 
 /** Maximum members per syndicate. */
 export const MAX_SYNDICATE_MEMBERS = 25;
