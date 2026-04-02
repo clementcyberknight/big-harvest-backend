@@ -33,6 +33,7 @@ for (const name of [
   "syndicateIdolContribute.lua",
   "syndicateLeaveOrDisband.lua",
   "decay.lua",
+  "redeemRefreshToken.lua",
 ]) {
   cpSync(join(srcDir, name), join(destDir, name));
 }
