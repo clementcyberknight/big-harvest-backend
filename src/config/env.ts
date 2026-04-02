@@ -29,6 +29,16 @@ const schema = z.object({
     .string()
     .optional()
     .transform((v) => v === "true"),
+  /**
+   * Comma-separated list of allowed CORS origins.
+   * Example: "https://app.ravolo.io,https://staging.ravolo.io"
+   * Defaults to empty string (no origin allowed) in production.
+   */
+  ALLOWED_ORIGINS: z.string().optional().default(""),
+  /** Rate limit: max requests per IP per window on auth endpoints. */
+  AUTH_RATE_LIMIT_POINTS: z.coerce.number().int().positive().default(5),
+  /** Rate limit window in seconds for auth endpoints. */
+  AUTH_RATE_LIMIT_DURATION_SEC: z.coerce.number().int().positive().default(60),
   /** Max rows drained per worker tick (MULTI LRANGE+LTRIM). */
   USER_ACTIONS_BATCH_SIZE: z.coerce.number().int().positive().max(500).default(200),
   /** Sleep when queue empty before polling again. */
@@ -55,6 +65,9 @@ export const env: Env = schema.parse({
     process.env.JWT_ACCESS_EXPIRES_IN ?? process.env.JWT_EXPIRES_IN ?? "24h",
   AUTH_CHALLENGE_TTL_SEC: process.env.AUTH_CHALLENGE_TTL_SEC,
   AUTH_DEV_BYPASS: process.env.AUTH_DEV_BYPASS,
+  ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
+  AUTH_RATE_LIMIT_POINTS: process.env.AUTH_RATE_LIMIT_POINTS,
+  AUTH_RATE_LIMIT_DURATION_SEC: process.env.AUTH_RATE_LIMIT_DURATION_SEC,
   REFRESH_TOKEN_TTL_DAYS: process.env.REFRESH_TOKEN_TTL_DAYS,
   USER_ACTIONS_BATCH_SIZE: process.env.USER_ACTIONS_BATCH_SIZE,
   USER_ACTIONS_POLL_MS: process.env.USER_ACTIONS_POLL_MS,

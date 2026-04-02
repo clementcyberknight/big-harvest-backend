@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, randomBytes } from "node:crypto";
 import type { Redis } from "ioredis";
 import { STARTER_GOLD } from "../../config/constants.js";
 import { env } from "../../config/env.js";
@@ -48,10 +48,12 @@ export class AuthService {
 
   async createChallenge(): Promise<AuthChallenge> {
     const challengeId = randomUUID();
+    const nonce = randomBytes(16).toString("hex");
     const message = [
       "Sign in to Ravolo",
       "",
       `Challenge: ${challengeId}`,
+      `Nonce: ${nonce}`,
       `Time: ${new Date().toISOString()}`,
     ].join("\n");
 
@@ -129,32 +131,51 @@ export class AuthService {
   }
 
   /**
-   * Rotates refresh token (GETDEL old, mint new). Call when access JWT expires.
+   * Rotates refresh token (atomic Lua redemption, then mints new pair).
+   * Call when access JWT expires.
    */
   async refreshSession(refreshTokenRaw: string): Promise<AuthSession> {
-    const session = await redeemRefreshToken(
+    const result = await redeemRefreshToken(
       this.redis,
       refreshTokenRaw,
       this.refreshTtlSec,
     );
-    if (!session) {
-      const used = await readUsedRefreshTokenPayload(this.redis, refreshTokenRaw);
-      if (used) {
-        logger.warn(
-          { userId: used.userId, sessionId: used.sessionId },
-          "token_reuse_detected",
-        );
-        await this.revokeAllUserSessions(used.userId);
+
+    if (!result.ok) {
+      if (result.reason === "REUSED") {
+        // Token reuse: the used-marker holds the payload — look it up to revoke all sessions.
+        const used = await readUsedRefreshTokenPayload(this.redis, refreshTokenRaw);
+        if (used) {
+          logger.warn(
+            { userId: used.userId, sessionId: used.sessionId },
+            "token_reuse_detected — revoking all user sessions",
+          );
+          await this.revokeAllUserSessions(used.userId);
+        }
         throw new AppError(
           "TOKEN_REUSE_DETECTED",
           "Refresh token reuse detected; please sign in again",
         );
       }
+      if (result.reason === "REVOKED") {
+        throw new AppError(
+          "REVOKED_REFRESH_TOKEN",
+          "Session has been revoked; please sign in again",
+        );
+      }
+      if (result.reason === "EXPIRED") {
+        throw new AppError(
+          "EXPIRED_REFRESH_TOKEN",
+          "Refresh token expired; please sign in again",
+        );
+      }
       throw new AppError(
         "INVALID_REFRESH_TOKEN",
-        "Invalid or expired refresh token",
+        "Invalid refresh token",
       );
     }
+
+    const session = result.payload;
 
     const profile = await this.profiles.findById(session.userId);
     if (!profile || profile.walletAddress !== session.walletAddress) {
@@ -164,7 +185,7 @@ export class AuthService {
     const revoked = await this.isSessionRevoked(session.sessionId);
     if (revoked) {
       throw new AppError(
-        "INVALID_REFRESH_TOKEN",
+        "REVOKED_REFRESH_TOKEN",
         "Session revoked; please sign in again",
       );
     }
