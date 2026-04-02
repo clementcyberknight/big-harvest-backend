@@ -51,6 +51,7 @@ let syndicateAttackSha: string | null = null;
 let syndicateIdolContributeSha: string | null = null;
 let syndicateLeaveOrDisbandSha: string | null = null;
 let decaySha: string | null = null;
+let redeemRefreshTokenSha: string | null = null;
 
 export async function loadRedisScripts(redis: Redis): Promise<void> {
   const plantSrc = readFileSync(resolveLuaFile("plant.lua"), "utf8");
@@ -147,6 +148,19 @@ export async function loadRedisScripts(redis: Redis): Promise<void> {
     syndicateLeaveOrDisbandSrc,
   )) as string;
   decaySha = (await redis.script("LOAD", decaySrc)) as string;
+  const redeemRefreshTokenSrc = readFileSync(
+    resolveLuaFile("redeemRefreshToken.lua"),
+    "utf8",
+  );
+  redeemRefreshTokenSha = (await redis.script(
+    "LOAD",
+    redeemRefreshTokenSrc,
+  )) as string;
+}
+
+export function getRedeemRefreshTokenSha(): string {
+  if (!redeemRefreshTokenSha) throw new Error("Redis scripts not loaded");
+  return redeemRefreshTokenSha;
 }
 
 export type PlantScriptResult =

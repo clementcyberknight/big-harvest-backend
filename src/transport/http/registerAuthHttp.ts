@@ -1,4 +1,5 @@
 import type { HttpRequest, HttpResponse, TemplatedApp } from "uWebSockets.js";
+import { RateLimiterMemory } from "rate-limiter-flexible";
 import { env } from "../../config/env.js";
 import { AppError } from "../../shared/errors/appError.js";
 import type { AuthService } from "../../modules/auth/auth.service.js";
@@ -10,11 +11,38 @@ import {
   verifyAccessToken,
 } from "../../modules/auth/jwt.js";
 import {
+  applyCors,
+  applySecurityHeaders,
   readRequestBody,
   sendJson,
   sendText,
 } from "./http.util.js";
 import { logger } from "../../infrastructure/logger/logger.js";
+
+/**
+ * IP-based rate limiter for auth endpoints.
+ * Defaults: 5 requests per 60 seconds per IP.
+ * Configurable via AUTH_RATE_LIMIT_POINTS / AUTH_RATE_LIMIT_DURATION_SEC.
+ */
+const authRateLimiter = new RateLimiterMemory({
+  points: env.AUTH_RATE_LIMIT_POINTS,
+  duration: env.AUTH_RATE_LIMIT_DURATION_SEC,
+});
+
+/**
+ * Extract the best-effort client IP from the request.
+ * Trusts x-forwarded-for when present (Railway / reverse-proxy environments).
+ */
+function getClientIp(req: HttpRequest): string {
+  const forwarded = req.getHeader("x-forwarded-for");
+  if (forwarded) {
+    // x-forwarded-for may be a comma-separated list; take the first entry.
+    return forwarded.split(",")[0]!.trim();
+  }
+  // uWebSockets does not expose the raw socket IP via HttpRequest; fall back to
+  // a sentinel so the limiter still works (all unknown IPs share one bucket).
+  return "unknown";
+}
 
 export type AuthHttpDeps = {
   auth: AuthService;
@@ -27,6 +55,7 @@ function httpStatusForAppError(code: string): string {
     case "INVALID_SIGNATURE":
     case "INVALID_REFRESH_TOKEN":
     case "EXPIRED_REFRESH_TOKEN":
+    case "REVOKED_REFRESH_TOKEN":
     case "TOKEN_REUSE_DETECTED":
       return "401 Unauthorized";
     case "CHALLENGE_EXPIRED":
@@ -52,25 +81,23 @@ function parseBearer(req: HttpRequest): string | null {
 }
 
 export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
-  app.options("/*", (res) => {
+  // OPTIONS preflight — must read origin synchronously before any async work.
+  app.options("/*", (res, req) => {
+    const origin = req.getHeader("origin");
     res.onAborted(() => {});
     res.cork(() => {
       res.writeStatus("204 No Content");
-      // CORS headers must be written after status in uWS.
-      res.writeHeader("Access-Control-Allow-Origin", "*");
-      res.writeHeader(
-        "Access-Control-Allow-Headers",
-        "content-type, authorization",
-      );
-      res.writeHeader(
-        "Access-Control-Allow-Methods",
-        "GET, POST, PATCH, OPTIONS",
-      );
+      // applyCors handles origin whitelisting; applySecurityHeaders adds HSTS etc.
+      applyCors(res, origin || undefined);
+      applySecurityHeaders(res);
       res.end();
     });
   });
 
-  app.get("/auth/challenge", (res) => {
+  app.get("/auth/challenge", (res, req) => {
+    // Read synchronous values before any async work (uWS requirement).
+    const origin = req.getHeader("origin");
+    const ip = getClientIp(req);
     let aborted = false;
     res.onAborted(() => {
       aborted = true;
@@ -78,32 +105,54 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
     });
     (async (): Promise<void> => {
       try {
+        await authRateLimiter.consume(ip);
+      } catch {
+        if (aborted) return;
+        sendJson(res, "429 Too Many Requests", {
+          error: "RATE_LIMITED",
+          message: "Too many requests; please slow down",
+        }, origin || undefined);
+        return;
+      }
+      try {
         const challenge = await deps.auth.createChallenge();
         if (aborted) return;
-        sendJson(res, "200 OK", challenge);
+        sendJson(res, "200 OK", challenge, origin || undefined);
       } catch (e) {
         if (aborted) return;
         logger.error({ err: e }, "GET /auth/challenge failed");
-        const msg = e instanceof Error ? e.message : "Internal error";
-        sendJson(res, "500 Internal Server Error", { error: msg });
+        sendJson(res, "500 Internal Server Error", { error: "Internal error" }, origin || undefined);
       }
     })().catch((e) => {
       logger.error({ err: e }, "GET /auth/challenge unhandled rejection");
       if (!aborted) {
         try {
-          sendJson(res, "500 Internal Server Error", { error: "Internal error" });
+          sendJson(res, "500 Internal Server Error", { error: "Internal error" }, origin || undefined);
         } catch {}
       }
     });
   });
 
   app.post("/auth/verify", (res, req) => {
+    const origin = req.getHeader("origin");
+    const ip = getClientIp(req);
     let aborted = false;
     res.onAborted(() => {
       aborted = true;
       logger.warn("POST /auth/verify aborted by client");
     });
     (async (): Promise<void> => {
+      try {
+        await authRateLimiter.consume(ip);
+      } catch {
+        if (aborted) return;
+        sendJson(res, "429 Too Many Requests", {
+          error: "RATE_LIMITED",
+          message: "Too many requests; please slow down",
+        }, origin || undefined);
+        return;
+      }
+
       const raw = await readRequestBody(res);
       if (raw === null || aborted) return;
 
@@ -115,7 +164,7 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
       try {
         body = JSON.parse(raw) as typeof body;
       } catch {
-        sendJson(res, "400 Bad Request", { error: "Invalid JSON" });
+        sendJson(res, "400 Bad Request", { error: "Invalid JSON" }, origin || undefined);
         return;
       }
 
@@ -128,7 +177,7 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
       if (!wallet || !signature || !challengeId) {
         sendJson(res, "400 Bad Request", {
           error: "wallet, signature, and challengeId are required",
-        });
+        }, origin || undefined);
         return;
       }
 
@@ -156,36 +205,49 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
             achievements: result.profile.achievements,
           },
           isNewUser: result.isNewUser,
-        });
+        }, origin || undefined);
       } catch (e) {
         if (aborted) return;
         if (e instanceof AppError) {
           sendJson(res, httpStatusForAppError(e.code), {
             error: e.code,
             message: e.httpSafeMessage,
-          });
+          }, origin || undefined);
           return;
         }
         logger.error({ err: e }, "POST /auth/verify failed");
-        sendJson(res, "500 Internal Server Error", { error: "Internal error" });
+        sendJson(res, "500 Internal Server Error", { error: "Internal error" }, origin || undefined);
       }
     })().catch((e) => {
       logger.error({ err: e }, "POST /auth/verify unhandled rejection");
       if (!aborted) {
         try {
-          sendJson(res, "500 Internal Server Error", { error: "Internal error" });
+          sendJson(res, "500 Internal Server Error", { error: "Internal error" }, origin || undefined);
         } catch {}
       }
     });
   });
 
   app.post("/auth/refresh", (res, req) => {
+    const origin = req.getHeader("origin");
+    const ip = getClientIp(req);
     let aborted = false;
     res.onAborted(() => {
       aborted = true;
       logger.warn("POST /auth/refresh aborted by client");
     });
     (async (): Promise<void> => {
+      try {
+        await authRateLimiter.consume(ip);
+      } catch {
+        if (aborted) return;
+        sendJson(res, "429 Too Many Requests", {
+          error: "RATE_LIMITED",
+          message: "Too many requests; please slow down",
+        }, origin || undefined);
+        return;
+      }
+
       const raw = await readRequestBody(res);
       if (raw === null || aborted) return;
 
@@ -193,7 +255,7 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
       try {
         body = JSON.parse(raw) as typeof body;
       } catch {
-        sendJson(res, "400 Bad Request", { error: "Invalid JSON" });
+        sendJson(res, "400 Bad Request", { error: "Invalid JSON" }, origin || undefined);
         return;
       }
 
@@ -202,7 +264,7 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
       if (!rt) {
         sendJson(res, "400 Bad Request", {
           error: "refreshToken is required",
-        });
+        }, origin || undefined);
         return;
       }
 
@@ -223,30 +285,31 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
             createdAt: session.profile.createdAt,
             achievements: session.profile.achievements,
           },
-        });
+        }, origin || undefined);
       } catch (e) {
         if (aborted) return;
         if (e instanceof AppError) {
           sendJson(res, httpStatusForAppError(e.code), {
             error: e.code,
             message: e.httpSafeMessage,
-          });
+          }, origin || undefined);
           return;
         }
         logger.error({ err: e }, "POST /auth/refresh failed");
-        sendJson(res, "500 Internal Server Error", { error: "Internal error" });
+        sendJson(res, "500 Internal Server Error", { error: "Internal error" }, origin || undefined);
       }
     })().catch((e) => {
       logger.error({ err: e }, "POST /auth/refresh unhandled rejection");
       if (!aborted) {
         try {
-          sendJson(res, "500 Internal Server Error", { error: "Internal error" });
+          sendJson(res, "500 Internal Server Error", { error: "Internal error" }, origin || undefined);
         } catch {}
       }
     });
   });
 
   app.post("/auth/logout", (res, req) => {
+    const origin = req.getHeader("origin");
     let aborted = false;
     res.onAborted(() => {
       aborted = true;
@@ -259,7 +322,7 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
       try {
         body = JSON.parse(raw) as typeof body;
       } catch {
-        sendJson(res, "400 Bad Request", { error: "Invalid JSON" });
+        sendJson(res, "400 Bad Request", { error: "Invalid JSON" }, origin || undefined);
         return;
       }
 
@@ -269,18 +332,19 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
         await deps.auth.revokeRefreshToken(rt);
       }
       if (aborted) return;
-      sendJson(res, "200 OK", { ok: true });
+      sendJson(res, "200 OK", { ok: true }, origin || undefined);
     })().catch((e) => {
       logger.error({ err: e }, "POST /auth/logout unhandled rejection");
       if (!aborted) {
         try {
-          sendJson(res, "500 Internal Server Error", { error: "Internal error" });
+          sendJson(res, "500 Internal Server Error", { error: "Internal error" }, origin || undefined);
         } catch {}
       }
     });
   });
 
   app.patch("/profile/username", (res, req) => {
+    const origin = req.getHeader("origin");
     let aborted = false;
     res.onAborted(() => {
       aborted = true;
@@ -290,13 +354,13 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
     const token = parseBearer(req);
     (async (): Promise<void> => {
       if (!token) {
-        sendJson(res, "401 Unauthorized", { error: "Missing bearer token" });
+        sendJson(res, "401 Unauthorized", { error: "Missing bearer token" }, origin || undefined);
         return;
       }
 
       const payload = verifyAccessToken(token);
       if (!payload) {
-        sendJson(res, "401 Unauthorized", { error: "Invalid or expired token" });
+        sendJson(res, "401 Unauthorized", { error: "Invalid or expired token" }, origin || undefined);
         return;
       }
       const revoked = await deps.auth.isSessionRevoked(payload.sessionId);
@@ -304,7 +368,7 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
         sendJson(res, "401 Unauthorized", {
           error: "UNAUTHORIZED",
           message: "Session revoked; please sign in again",
-        });
+        }, origin || undefined);
         return;
       }
 
@@ -315,7 +379,7 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
       try {
         body = JSON.parse(raw) as typeof body;
       } catch {
-        sendJson(res, "400 Bad Request", { error: "Invalid JSON" });
+        sendJson(res, "400 Bad Request", { error: "Invalid JSON" }, origin || undefined);
         return;
       }
 
@@ -324,7 +388,7 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
         sendJson(res, "400 Bad Request", {
           error: "BAD_REQUEST",
           message: parsed.error.issues[0]?.message ?? "Invalid username",
-        });
+        }, origin || undefined);
         return;
       }
 
@@ -344,24 +408,24 @@ export function registerAuthHttp(app: TemplatedApp, deps: AuthHttpDeps): void {
             createdAt: profile.createdAt,
             achievements: profile.achievements,
           },
-        });
+        }, origin || undefined);
       } catch (e) {
         if (aborted) return;
         if (e instanceof AppError) {
           sendJson(res, httpStatusForAppError(e.code), {
             error: e.code,
             message: e.httpSafeMessage,
-          });
+          }, origin || undefined);
           return;
         }
         logger.error({ err: e }, "PATCH /profile/username failed");
-        sendJson(res, "500 Internal Server Error", { error: "Internal error" });
+        sendJson(res, "500 Internal Server Error", { error: "Internal error" }, origin || undefined);
       }
     })().catch((e) => {
       logger.error({ err: e }, "PATCH /profile/username unhandled rejection");
       if (!aborted) {
         try {
-          sendJson(res, "500 Internal Server Error", { error: "Internal error" });
+          sendJson(res, "500 Internal Server Error", { error: "Internal error" }, origin || undefined);
         } catch {}
       }
     });

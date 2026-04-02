@@ -61,6 +61,21 @@ export type ListenToken = unknown;
 export type WsAppContext = WsGameContext & AuthHttpDeps;
 
 export function createWsApp(ctx: WsAppContext) {
+  // Guard: AUTH_DEV_BYPASS must never be enabled in production.
+  if (env.AUTH_DEV_BYPASS && env.NODE_ENV === "production") {
+    logger.fatal(
+      "AUTH_DEV_BYPASS=true is set in a production environment — this is a critical security misconfiguration. Refusing to start.",
+    );
+    throw new Error(
+      "AUTH_DEV_BYPASS must not be enabled in production (NODE_ENV=production)",
+    );
+  }
+  if (env.AUTH_DEV_BYPASS) {
+    logger.warn(
+      "AUTH_DEV_BYPASS is enabled — all WebSocket connections bypass JWT verification. Do NOT use in production.",
+    );
+  }
+
   const app = App();
   globalApp = app;
 
@@ -214,10 +229,55 @@ export function createWsApp(ctx: WsAppContext) {
       })();
     },
     message(ws, message, isBinary) {
-      void ctx.syndicates.touchPresence(ws.getUserData().userId);
+      const { userId, sessionId } = ws.getUserData();
+      void ctx.syndicates.touchPresence(userId);
+
+      // Re-check session revocation on every message to close connections
+      // whose sessions were revoked mid-flight (e.g. token reuse detected).
+      if (sessionId) {
+        void ctx.auth.isSessionRevoked(sessionId).then((revoked) => {
+          if (revoked) {
+            logger.warn({ userId, sessionId }, "ws session revoked mid-connection — closing");
+            try {
+              sendGameMessage(ws, {
+                type: "ERROR",
+                code: "SESSION_REVOKED",
+                message: "Session revoked; please sign in again",
+              });
+            } catch { /* ignore */ }
+            ws.close();
+            return;
+          }
+          void dispatchWsMessage(ws, message, isBinary, ctx).catch((err) => {
+            logger.error({ err, userId }, "ws dispatch failed");
+            try {
+              sendGameMessage(ws, {
+                type: "ERROR",
+                code: "INTERNAL",
+                message: "Internal error",
+              });
+            } catch { /* ignore */ }
+          });
+        }).catch((err) => {
+          logger.error({ err, userId, sessionId }, "ws revocation check failed — allowing message");
+          void dispatchWsMessage(ws, message, isBinary, ctx).catch((dispatchErr) => {
+            logger.error({ err: dispatchErr, userId }, "ws dispatch failed");
+            try {
+              sendGameMessage(ws, {
+                type: "ERROR",
+                code: "INTERNAL",
+                message: "Internal error",
+              });
+            } catch { /* ignore */ }
+          });
+        });
+        return;
+      }
+
+      // No sessionId (AUTH_DEV_BYPASS path) — dispatch directly.
       void dispatchWsMessage(ws, message, isBinary, ctx).catch((err) => {
         logger.error(
-          { err, userId: ws.getUserData().userId },
+          { err, userId },
           "ws dispatch failed",
         );
         try {
