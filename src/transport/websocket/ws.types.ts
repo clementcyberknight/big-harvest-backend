@@ -1,5 +1,5 @@
 /** Wire format: MessagePack binary frames via `ws.codec.ts` (same object shapes). */
-export type WsUserData = { userId: string };
+export type WsUserData = { userId: string; sessionId?: string };
 
 export type WsInboundMessage =
   | { type: "PLANT"; payload: unknown }

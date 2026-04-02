@@ -154,6 +154,26 @@ export function refreshTokenStorageKey(tokenHashHex: string): string {
   return `ravolo:auth:rt:${tokenHashHex}`;
 }
 
+/** Marker set after a refresh token is redeemed once (detect reuse). */
+export function refreshTokenUsedKey(tokenHashHex: string): string {
+  return `ravolo:auth:rt_used:${tokenHashHex}`;
+}
+
+/** Marker set when a refresh token is explicitly revoked (logout). */
+export function refreshTokenRevokedKey(tokenHashHex: string): string {
+  return `ravolo:auth:rt_revoked:${tokenHashHex}`;
+}
+
+/** SET of active session ids for a user (best-effort, used for mass revocation). */
+export function userSessionSetKey(userId: string): string {
+  return `ravolo:${userTag(userId)}:auth:sessions`;
+}
+
+/** Session revocation flag checked on auth. */
+export function sessionRevokedKey(sessionId: string): string {
+  return `ravolo:session:revoked:${sessionId}`;
+}
+
 /** LIST of JSON lines; worker batches to Supabase (hot path only RPUSH). */
 export function userActionsQueueKey(): string {
   return "ravolo:user_actions:queue";

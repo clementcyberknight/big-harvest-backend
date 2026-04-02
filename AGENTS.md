@@ -253,5 +253,152 @@ Align new dependencies with this architecture; prefer boring, fast primitives ov
 ## Naming
 
 - **Ravolo** = backend / app name in repo metadata.
-- **Big Harvest** = player-facing game name and economy design.  
-  Documentation and agent prompts may use either; code comments should stay factual and short.
+
+## HTTP & WebSocket status codes (mandatory)
+
+**Never return an error payload with HTTP 200.** The status code is the signal — the body is the detail.
+A `{ "error": "...", "message": "..." }` body on a 200 response is invisible to any HTTP-aware client,
+CLI, proxy, or retry layer. Treat it as a silent corruption of the API contract.
+
+### HTTP endpoints (`/auth/*`, `/profile/*`, cold path)
+
+| Condition                                        | Status |
+| ------------------------------------------------ | ------ |
+| Success                                          | `200`  |
+| Malformed body / failed Zod validation           | `400`  |
+| Missing, expired, or invalid JWT / refresh token | `401`  |
+| Valid token but insufficient permission          | `403`  |
+| Resource conflict / duplicate idempotency key    | `409`  |
+| Unhandled internal error                         | `500`  |
+
+**Refresh token failures** (`INVALID_REFRESH_TOKEN`, `EXPIRED_REFRESH_TOKEN`, etc.) **must return `401`**, not `200`.
+The client uses the HTTP status to decide whether to redirect to login — a `200` suppresses that logic.
+
+### WebSocket game actions (hot path)
+
+WS frames don't have HTTP status codes, but every outbound envelope must carry an explicit `ok` field
+and a stable `error` code the client can branch on:
+
+```ts
+// success
+{ ok: true,  type: "HARVEST_ACK",  data: { ... } }
+
+// failure
+{ ok: false, type: "HARVEST_ACK",  error: "PLOT_NOT_READY", message: "Plot matures in 42 s" }
+```
+
+Never send `{ ok: false }` wrapped inside an `{ ok: true }` envelope. If the Lua script returns an
+error sentinel, propagate it as `ok: false` from the handler — do not swallow it into a successful frame.
+
+### Implementation checklist for every new endpoint / handler
+
+1. **HTTP routes:** use `res.status(4xx).json(...)` / `res.status(5xx).json(...)` — never `res.status(200).json({ error: ... })`.
+2. **WS handlers:** set `ok: false` and include a stable `error` string from `AppError` codes.
+3. **`AppError` mapping in transport:** each domain error class maps to exactly one HTTP status and one WS error code — add the mapping when you add the error.
+4. **Auth errors specifically:** `INVALID_REFRESH_TOKEN`, `EXPIRED_REFRESH_TOKEN`, `TOKEN_REUSE_DETECTED` → always `401`. Never `200`, never `400`.
+5. **No stack traces to the client** — error body shape is `{ error: CODE, message: string }` only.
+
+## Auth & session lifecycle
+
+- **JWT claims** must include: `sub` (userId), `sessionId`, `role`, `iat`, `exp`. No other data.
+- **Access tokens** expire in ≤15 min. **Refresh tokens** expire in ≤30 days and are single-use.
+- **Refresh token rotation:** on every use, invalidate the presented token and issue a new one atomically
+  in a single Redis `SET NX` + Supabase upsert. A reused (already-invalidated) refresh token signals
+  compromise — immediately revoke **all** sessions for that user and log `WARN token_reuse_detected`.
+- **Session revocation** is a Redis `SET ravolo:session:revoked:{sessionId} 1 EX <ttl>` checked on
+  every WS upgrade and on every auth middleware pass. TTL = remaining token lifetime.
+- **Banning / kicking** a player: write the revocation key, then publish to Redis pub/sub channel
+  `ravolo:kick:{userId}` so all WS nodes can close that player's socket immediately.
+- **WS upgrade auth:** verify JWT locally (no network call), check revocation key in Redis, reject with
+  HTTP `401` before the upgrade completes. Never allow an unauthenticated socket to enter the router.
+
+## Input validation rules (beyond Zod shapes)
+
+- **String lengths:** usernames ≤ 32 chars, display names ≤ 64, chat messages ≤ 500, item names ≤ 128.
+  Enforce in Zod schemas with `.max()`; never rely only on DB constraints.
+- **Numeric bounds:** all quantity/amount fields must have explicit `.min(1).max(MAX_SAFE_INT)` in schema.
+- **Unicode:** normalise all user-supplied strings to NFC before storing. Reject strings containing null
+  bytes (`\u0000`) or non-printable control characters.
+- **Homoglyph / look-alike usernames:** run a confusables check at registration (not at runtime).
+- **No free-form JSON from clients** in game action payloads — every field must appear in the Zod schema.
+  Unknown fields are stripped (`z.object({...}).strict()`).
+
+## Resilience & circuit breaking
+
+- **Redis unavailable:** if the Redis client cannot connect within 200 ms, reject new WS upgrades with a
+  `503` and emit a `pino.error` with `reason: 'redis_unavailable'`. Do not silently queue actions in
+  process memory — this masks the outage.
+- **Supabase unavailable:** BullMQ workers retry with exponential backoff (base 1 s, max 5 min, 10
+  attempts). After 10 failures the job moves to the dead-letter queue (`ravolo:dlq`). Alert (log
+  `ERROR dlq_job_added`) — do not drop silently.
+- **Circuit breaker on external calls** (Supabase, any third-party API): use a simple in-process
+  counter; after 5 consecutive failures open the breaker for 30 s, return a fast error to callers, then
+  allow one probe request to close it.
+- **Never catch-and-swallow errors** in infrastructure code. Always: log at `error` level with full
+  context, then either propagate or push to the DLQ.
+
+## Secrets management
+
+- All secrets come from environment variables only — never from config files committed to the repo.
+- Required secrets: `JWT_SECRET`, `JWT_REFRESH_SECRET`, `REDIS_URL`, `SUPABASE_SERVICE_KEY`.
+  `config/env.ts` must throw on startup if any required secret is missing.
+- **Pino redact list** (extend as needed): `['password', 'token', 'refreshToken', 'authorization',
+'JWT_SECRET', 'SUPABASE_SERVICE_KEY', 'req.headers.authorization']`.
+- Secrets must never appear in structured log `data` fields even under different key names. If you're
+  logging an object that might contain a secret, explicitly omit or mask the field.
+- **Rotation:** JWT secrets must be rotatable without downtime — support a `JWT_SECRET_PREV` env var
+  that the verify step also accepts during a rotation window.
+
+## Observability
+
+### Metrics (expose via `/metrics` in Prometheus format)
+
+- `ws_connections_active` — gauge, current open sockets.
+- `ws_message_duration_ms` — histogram, per `type` label; target p99 < 100 ms.
+- `redis_lua_errors_total` — counter, per script name.
+- `bullmq_queue_depth` — gauge, per queue name.
+- `bullmq_job_duration_ms` — histogram, per queue + job type.
+- `dlq_jobs_total` — counter; page on sustained increase.
+
+### Health endpoints (HTTP, unauthenticated)
+
+- `GET /healthz` — returns `200 OK` if the process is alive (no external checks).
+- `GET /readyz` — returns `200 OK` only if Redis ping < 50 ms AND DB connection pool is open.
+  Returns `503` otherwise. k8s/load balancer readiness probe uses this endpoint.
+
+### Tracing
+
+- Every WS message and every worker job must carry a `requestId` (UUIDv7, generated at the transport
+  edge for WS; from the BullMQ job ID for workers).
+- Pass `requestId` as a pino child logger binding through the entire call chain.
+- Do not implement distributed trace propagation beyond this for now — add OpenTelemetry if/when a
+  tracing backend is adopted.
+
+## Worker configuration
+
+- **Concurrency:** default `concurrency: 5` per worker. Increase only with a measured Redis CPU budget.
+- **Max queue depth:** set `defaultJobOptions.removeOnComplete: 1000` and `removeOnFail: 5000`.
+  Alert (log `WARN queue_depth_high`) if a queue exceeds 10 000 jobs.
+- **Stalled job detection:** `stalledInterval: 30_000`, `maxStalledCount: 2`. After 2 stalls a job is
+  marked failed and moves toward DLQ.
+- **Shutdown:** `worker.close()` on `SIGTERM`; drain in-flight jobs up to 30 s then force-close.
+  The `app.disposeAsync()` order: stop accepting new WS connections → drain workers → flush
+  `user_actions` queue → close Redis → exit.
+
+## Protocol versioning
+
+- Every WS envelope includes a top-level `"v": 1` field (integer, incremented on breaking changes).
+- Clients send their supported version on connect (`HELLO` message). If the server cannot support that
+  version, reject with `{ ok: false, error: "VERSION_NOT_SUPPORTED" }` before routing.
+- **Additive changes** (new optional fields) do not require a version bump.
+- **Breaking changes** (renamed fields, removed fields, changed semantics) require a bump and a
+  migration window where both versions are handled simultaneously.
+- Lua scripts are versioned by their `EVALSHA` hash — loading new scripts at startup is backwards-safe
+  because the old hash is simply no longer called.
+
+## Pagination conventions
+
+- All list endpoints and WS list responses use **keyset (cursor) pagination**, never offset.
+- Cursor is an opaque base64-encoded string encoding `{ id, timestamp }` of the last seen record.
+- Default page size: 20. Maximum: 100. Enforce in Zod with `.max(100)`.
+- Response envelope: `{ items: T[], nextCursor: string | null }`. `null` means no more pages.

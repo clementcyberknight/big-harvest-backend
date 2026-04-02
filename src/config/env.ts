@@ -16,6 +16,10 @@ const schema = z.object({
     .string()
     .min(1, "SUPABASE_SERVICE_ROLE_KEY is required"),
   JWT_SECRET: z.string().min(16, "JWT_SECRET must be at least 16 characters"),
+  JWT_SECRET_PREV: z
+    .string()
+    .min(16, "JWT_SECRET_PREV must be at least 16 characters")
+    .optional(),
   /** Short-lived access JWT (WS + API). Use refresh token for long sessions. */
   JWT_ACCESS_EXPIRES_IN: z.string().default("24h"),
   /** Long-lived session; stored in Redis keyed by hash(refresh token). */
@@ -46,6 +50,7 @@ export const env: Env = schema.parse({
   SUPABASE_URL: process.env.SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
   JWT_SECRET: process.env.JWT_SECRET,
+  JWT_SECRET_PREV: process.env.JWT_SECRET_PREV,
   JWT_ACCESS_EXPIRES_IN:
     process.env.JWT_ACCESS_EXPIRES_IN ?? process.env.JWT_EXPIRES_IN ?? "24h",
   AUTH_CHALLENGE_TTL_SEC: process.env.AUTH_CHALLENGE_TTL_SEC,

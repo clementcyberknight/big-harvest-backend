@@ -77,6 +77,11 @@ export function createWsApp(ctx: WsAppContext) {
     maxPayloadLength: 16 * 1024,
     upgrade(res, req, context) {
       let userId: string;
+      let sessionId: string | undefined;
+      let aborted = false;
+      res.onAborted(() => {
+        aborted = true;
+      });
 
       if (env.AUTH_DEV_BYPASS) {
         const q = req.getQuery("userId") ?? "";
@@ -114,6 +119,41 @@ export function createWsApp(ctx: WsAppContext) {
           return;
         }
         userId = payload.sub;
+        sessionId = payload.sessionId;
+      }
+
+      if (sessionId) {
+        void ctx.auth
+          .isSessionRevoked(sessionId)
+          .then((revoked) => {
+            if (aborted) return;
+            if (revoked) {
+              res.cork(() => {
+                res.writeStatus("401 Unauthorized").end("Session revoked");
+              });
+              return;
+            }
+            res.upgrade(
+              { userId, sessionId },
+              req.getHeader("sec-websocket-key"),
+              req.getHeader("sec-websocket-protocol"),
+              req.getHeader("sec-websocket-extensions"),
+              context,
+            );
+          })
+          .catch((err) => {
+            logger.error(
+              { err, userId, sessionId },
+              "ws upgrade auth check failed",
+            );
+            if (aborted) return;
+            res.cork(() => {
+              res
+                .writeStatus("503 Service Unavailable")
+                .end("Auth unavailable");
+            });
+          });
+        return;
       }
 
       res.upgrade(
@@ -125,22 +165,18 @@ export function createWsApp(ctx: WsAppContext) {
       );
     },
     open(ws: WebSocket<WsUserData>) {
-      /* userId set in upgrade */
-      // NOTE: "global" subscription is deferred until after the initial unicast
-      // messages are sent. Subscribing here would cause any concurrent
-      // broadcastGameStatus() call to deliver a second GAME_STATUS to this
-      // client before the explicit send below, resulting in a duplicate.
       const { userId } = ws.getUserData();
       logger.debug({ userId }, "ws connected");
       void (async () => {
         try {
-          const [prices, activeEvent, gold, inventory, plots] = await Promise.all([
-            ctx.market.getAllPrices(),
-            getActiveEvent(ctx.redis),
-            ctx.market.getUserGold(userId),
-            ctx.market.getUserInventory(userId),
-            ctx.planting.getPlots(userId),
-          ]);
+          const [prices, activeEvent, gold, inventory, plots] =
+            await Promise.all([
+              ctx.market.getAllPrices(),
+              getActiveEvent(ctx.redis),
+              ctx.market.getUserGold(userId),
+              ctx.market.getUserInventory(userId),
+              ctx.planting.getPlots(userId),
+            ]);
 
           sendGameMessage(ws, {
             type: "GAME_STATUS",

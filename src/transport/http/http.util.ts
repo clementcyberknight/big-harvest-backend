@@ -31,8 +31,8 @@ export function readRequestBody(
       total += chunk.length;
       if (total > maxBytes) {
         res.cork(() => {
-          applyCors(res);
           res.writeStatus("413 Payload Too Large");
+          applyCors(res);
           res.end();
         });
         finish(null);
@@ -54,6 +54,7 @@ export function sendJson(
   const payload = JSON.stringify(body);
   res.cork(() => {
     res.writeStatus(status);
+    applyCors(res);
     res.writeHeader("Content-Type", "application/json; charset=utf-8");
     res.end(payload);
   });
@@ -62,6 +63,7 @@ export function sendJson(
 export function sendText(res: HttpResponse, status: string, text: string): void {
   res.cork(() => {
     res.writeStatus(status);
+    applyCors(res);
     res.writeHeader("Content-Type", "text/plain; charset=utf-8");
     res.end(text);
   });

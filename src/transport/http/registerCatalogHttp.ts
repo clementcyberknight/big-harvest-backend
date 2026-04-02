@@ -23,7 +23,7 @@ import {
   LOAN_GRACE_MS,
   LOAN_PLOT_COLLATERAL_GOLD,
 } from "../../config/loan.constants.js";
-import { applyCors, sendJson } from "./http.util.js";
+import { sendJson } from "./http.util.js";
 
 /** Serialisable catalog payload — built once at startup, cached forever. */
 const CATALOG = buildCatalog();
@@ -181,7 +181,6 @@ function buildCatalog() {
 export function registerCatalogHttp(app: TemplatedApp): void {
   app.get("/catalog", (res) => {
     res.onAborted(() => {});
-    applyCors(res);
     sendJson(res, "200 OK", CATALOG);
   });
 }

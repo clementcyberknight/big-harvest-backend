@@ -4,11 +4,20 @@ import { STARTER_GOLD } from "../../config/constants.js";
 import { env } from "../../config/env.js";
 import { logger } from "../../infrastructure/logger/logger.js";
 import { authChallengeKey } from "../../infrastructure/redis/keys.js";
+import {
+  sessionRevokedKey,
+  userSessionSetKey,
+} from "../../infrastructure/redis/keys.js";
 import { AppError } from "../../shared/errors/appError.js";
 import type { ProfileService } from "../profile/profile.service.js";
 import type { OnboardingService } from "../onboarding/onboarding.service.js";
 import { signAccessToken } from "./jwt.js";
-import { mintRefreshToken, redeemRefreshToken } from "./refreshToken.redis.js";
+import {
+  mintRefreshToken,
+  readUsedRefreshTokenPayload,
+  redeemRefreshToken,
+  revokeRefreshToken,
+} from "./refreshToken.redis.js";
 import { verifySolanaSignature } from "./solana.js";
 
 export type AuthChallenge = {
@@ -97,12 +106,25 @@ export class AuthService {
       );
     }
 
-    const accessToken = signAccessToken(profile.id, walletAddress);
+    const sessionId = randomUUID();
+    const accessToken = signAccessToken(profile.id, walletAddress, sessionId);
     const refreshToken = await mintRefreshToken(
       this.redis,
-      { userId: profile.id, walletAddress },
+      { userId: profile.id, walletAddress, sessionId },
       this.refreshTtlSec,
     );
+    // Track active sessions for mass revocation on refresh token reuse.
+    // Best-effort: if this fails, auth still works; we just can't revoke all sessions later.
+    try {
+      const setKey = userSessionSetKey(profile.id);
+      await this.redis
+        .multi()
+        .sadd(setKey, sessionId)
+        .expire(setKey, this.refreshTtlSec)
+        .exec();
+    } catch (err) {
+      logger.warn({ err, userId: profile.id }, "failed to track user session id");
+    }
     return { accessToken, refreshToken, profile, isNewUser };
   }
 
@@ -110,8 +132,24 @@ export class AuthService {
    * Rotates refresh token (GETDEL old, mint new). Call when access JWT expires.
    */
   async refreshSession(refreshTokenRaw: string): Promise<AuthSession> {
-    const session = await redeemRefreshToken(this.redis, refreshTokenRaw);
+    const session = await redeemRefreshToken(
+      this.redis,
+      refreshTokenRaw,
+      this.refreshTtlSec,
+    );
     if (!session) {
+      const used = await readUsedRefreshTokenPayload(this.redis, refreshTokenRaw);
+      if (used) {
+        logger.warn(
+          { userId: used.userId, sessionId: used.sessionId },
+          "token_reuse_detected",
+        );
+        await this.revokeAllUserSessions(used.userId);
+        throw new AppError(
+          "TOKEN_REUSE_DETECTED",
+          "Refresh token reuse detected; please sign in again",
+        );
+      }
       throw new AppError(
         "INVALID_REFRESH_TOKEN",
         "Invalid or expired refresh token",
@@ -123,10 +161,26 @@ export class AuthService {
       throw new AppError("INVALID_REFRESH_TOKEN", "Session no longer valid");
     }
 
-    const accessToken = signAccessToken(profile.id, profile.walletAddress);
+    const revoked = await this.isSessionRevoked(session.sessionId);
+    if (revoked) {
+      throw new AppError(
+        "INVALID_REFRESH_TOKEN",
+        "Session revoked; please sign in again",
+      );
+    }
+
+    const accessToken = signAccessToken(
+      profile.id,
+      profile.walletAddress,
+      session.sessionId,
+    );
     const refreshToken = await mintRefreshToken(
       this.redis,
-      { userId: profile.id, walletAddress: profile.walletAddress },
+      {
+        userId: profile.id,
+        walletAddress: profile.walletAddress,
+        sessionId: session.sessionId,
+      },
       this.refreshTtlSec,
     );
 
@@ -135,6 +189,52 @@ export class AuthService {
 
   /** Revokes refresh token (e.g. logout). Idempotent. */
   async revokeRefreshToken(refreshTokenRaw: string): Promise<void> {
-    await redeemRefreshToken(this.redis, refreshTokenRaw);
+    const session = await revokeRefreshToken(
+      this.redis,
+      refreshTokenRaw,
+      this.refreshTtlSec,
+    );
+    if (!session) return;
+    await this.revokeSession(session.sessionId);
+    try {
+      await this.redis.srem(userSessionSetKey(session.userId), session.sessionId);
+    } catch (err) {
+      logger.warn(
+        { err, userId: session.userId, sessionId: session.sessionId },
+        "failed to remove session id from set",
+      );
+    }
+  }
+
+  async isSessionRevoked(sessionId: string): Promise<boolean> {
+    const v = await this.redis.get(sessionRevokedKey(sessionId));
+    return v === "1";
+  }
+
+  private async revokeSession(sessionId: string): Promise<void> {
+    await this.redis.set(sessionRevokedKey(sessionId), "1", "EX", this.refreshTtlSec);
+  }
+
+  private async revokeAllUserSessions(userId: string): Promise<void> {
+    const setKey = userSessionSetKey(userId);
+    let sessionIds: string[] = [];
+    try {
+      sessionIds = await this.redis.smembers(setKey);
+    } catch (err) {
+      logger.warn({ err, userId }, "failed to list user session ids for revocation");
+    }
+
+    if (sessionIds.length > 0) {
+      const pipeline = this.redis.pipeline();
+      for (const sid of sessionIds) {
+        pipeline.set(sessionRevokedKey(sid), "1", "EX", this.refreshTtlSec);
+      }
+      pipeline.del(setKey);
+      await pipeline.exec();
+      return;
+    }
+
+    // If we have no tracked sessions, best-effort revoke just means clearing the set.
+    await this.redis.del(setKey);
   }
 }
