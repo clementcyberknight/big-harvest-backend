@@ -9,6 +9,7 @@ export const createSyndicateSchema = z.object({
   visibility: z.enum(["public", "private"]),
   levelPreferenceMin: z.coerce.number().int().min(1).max(100).default(1),
   goldPreferenceMin: z.coerce.number().int().min(0).max(1_000_000_000).default(0),
+  emblemId: z.string().min(1).max(64).default("emblem:default"),
 });
 
 export const requestJoinSchema = z.object({

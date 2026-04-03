@@ -69,6 +69,7 @@ redis.call('HSET', metaKey,
   'visibility', vis,
   'levelPreferenceMin', tostring(ARGV[6] or '1'),
   'goldPreferenceMin', tostring(ARGV[7] or '0'),
+  'emblemId', tostring(ARGV[11] or 'emblem:default'),
   'ownerId', tostring(ARGV[1] or ''),
   'createdAtMs', nowMs,
   'disbanded', '0'

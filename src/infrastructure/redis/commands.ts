@@ -914,6 +914,7 @@ export async function redisSyndicateCreate(
     nowMs: number;
     idempTtlSec: number;
     syndicateKeyPrefix: string;
+    emblemId: string;
   },
 ): Promise<SyndicateCreateResult> {
   if (!syndicateCreateSha) throw new Error("Redis scripts not loaded");
@@ -938,6 +939,7 @@ export async function redisSyndicateCreate(
       String(args.nowMs),
       String(args.idempTtlSec),
       args.syndicateKeyPrefix,
+      args.emblemId,
     )) as string;
     return parseSyndicateCreatePayload(res);
   } catch (e) {

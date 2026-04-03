@@ -120,6 +120,7 @@ export class SyndicateService {
         members: Number.isFinite(members) ? members : 0,
         shieldExpiresAtMs: shield,
         idolLevel,
+        emblemId: meta.emblemId ?? "emblem:default",
       });
     }
 
@@ -177,6 +178,7 @@ export class SyndicateService {
       members: membersList.length,
       shieldExpiresAtMs: shield,
       idolLevel,
+      emblemId: meta.emblemId ?? "emblem:default",
       ownerId: meta.ownerId ?? "",
       createdAtMs: toInt(meta.createdAtMs, 0),
       joinRequests,
@@ -216,6 +218,7 @@ export class SyndicateService {
           nowMs: nowMs(),
           idempTtlSec: IDEMPOTENCY_TTL_SEC,
           syndicateKeyPrefix: "ravolo:syndicate:",
+          emblemId: cmd.emblemId,
         },
       );
       return { syndicateId: res.syndicateId };

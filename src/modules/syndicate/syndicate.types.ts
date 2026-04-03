@@ -12,6 +12,7 @@ export type SyndicateSummary = {
   members: number;
   shieldExpiresAtMs: number;
   idolLevel: number;
+  emblemId: string;
 };
 
 export type SyndicateMember = {
@@ -35,6 +36,7 @@ export type CreateSyndicateCommand = {
   visibility: SyndicateVisibility;
   levelPreferenceMin: number;
   goldPreferenceMin: number;
+  emblemId: string;
 };
 
 export type ListSyndicatesQuery = {
