@@ -61,8 +61,8 @@ export async function startApp(): Promise<AppInstance> {
   const auth = new AuthService(redis, profile, onboarding);
   const userActions = new UserActionService(redis);
   const stopUserActionsWorker = startUserActionsFlushWorker(redis);
-  const syndicates = new SyndicateService(redis);
   const leaderboards = new LeaderboardService(redis);
+  const syndicates = new SyndicateService(redis, market, leaderboards);
 
   const ctx: WsAppContext = {
     redis,

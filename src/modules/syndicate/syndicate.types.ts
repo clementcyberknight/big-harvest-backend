@@ -54,6 +54,27 @@ export type AcceptJoinCommand = {
   userId: string;
 };
 
+export type SyndicateCommodityStats = {
+  itemId: string;
+  amount: number;
+  marketShare: number;
+  worth: number;
+  percentageWorthGainDrop: number;
+};
+
+export type SyndicateDashboardView = {
+  name: string;
+  globalRank: number;
+  activeBoost: number;
+  totalGold: number;
+  totalMembers: number;
+  commodities: SyndicateCommodityStats[];
+};
+
+export type ViewSyndicateDashboardQuery = {
+  syndicateId: string;
+};
+
 export type DepositBankCommand =
   | { requestId: string; syndicateId: string; kind: "gold"; amount: number }
   | { requestId: string; syndicateId: string; kind: "item"; itemId: string; amount: number };
