@@ -1,6 +1,10 @@
 import type { Redis } from "ioredis";
 import { IDEMPOTENCY_TTL_SEC, MAX_SYNDICATE_MEMBERS } from "../../config/constants.js";
 import { logger } from "../../infrastructure/logger/logger.js";
+import type { MarketService } from "../market/market.service.js";
+import type { LeaderboardService } from "../leaderboard/leaderboard.service.js";
+import { produceBasePriceMicro } from "../market/market.catalog.js";
+import { toGoldUnits } from "../market/market.types.js";
 import {
   inventoryKey,
   syndicateBankGoldKey,
@@ -71,6 +75,7 @@ import {
   viewBankSchema,
   viewContributionSchema,
   viewSyndicateMemberSchema,
+  viewSyndicateDashboardSchema,
 } from "./syndicate.validator.js";
 
 const MIN_CREATE_LEVEL = 13;
@@ -88,6 +93,8 @@ function nowMs(): number {
 export class SyndicateService {
   constructor(
     private readonly redis: Redis,
+    private readonly market: MarketService,
+    private readonly leaderboards: LeaderboardService,
     private readonly repo = new SyndicateRepository(),
     private readonly onboarding = new OnboardingService(redis),
   ) {}
@@ -684,6 +691,93 @@ export class SyndicateService {
       targetUserId,
     );
     return { gold, items };
+  }
+
+  async viewDashboard(
+    userId: string,
+    raw: unknown,
+  ): Promise<import("./syndicate.types.js").SyndicateDashboardView> {
+    await this.onboarding.ensureOnboarded(userId);
+    const parsed = viewSyndicateDashboardSchema.safeParse(raw);
+    if (!parsed.success)
+      throw new AppError("BAD_REQUEST", "Invalid view dashboard payload");
+    const { syndicateId } = parsed.data as import("./syndicate.types.js").ViewSyndicateDashboardQuery;
+
+    const sid = await this.redis.get(userSyndicateIdKey(userId));
+    if (!sid || sid !== syndicateId)
+      throw new AppError("NOT_MEMBER" as never, "Not a member");
+
+    const meta = await this.repo.getMeta(this.redis, syndicateId);
+    if (!meta.id)
+      throw new AppError("NO_SUCH_SYNDICATE", "Syndicate not found");
+
+    const members = await this.repo.getMemberIds(this.redis, syndicateId);
+    const bankGold = await this.repo.bankGold(this.redis, syndicateId);
+    const bankItems = await this.repo.bankItems(this.redis, syndicateId);
+    const idolLevel = await this.repo.idolLevel(this.redis, syndicateId);
+
+    const prices = await this.market.getAllPrices();
+
+    let totalWorth = 0;
+    const commoditiesRaw: {
+      itemId: string;
+      amount: number;
+      worth: number;
+      percentageWorthGainDrop: number;
+    }[] = [];
+
+    for (const [itemId, amount] of Object.entries(bankItems)) {
+      if (amount <= 0) continue;
+
+      const currentSellMicro = prices[itemId]?.sell ?? 0;
+      const baseSellMicro = produceBasePriceMicro(itemId);
+
+      // Worth of these items according to current sell price in gold units
+      const currentSellGoldUnits = toGoldUnits(currentSellMicro) ?? 0;
+      const worth = amount * currentSellGoldUnits;
+
+      let percentageWorthGainDrop = 0;
+      if (baseSellMicro > 0) {
+        percentageWorthGainDrop = ((currentSellMicro - baseSellMicro) / baseSellMicro) * 100;
+      }
+
+      totalWorth += worth;
+
+      commoditiesRaw.push({
+        itemId,
+        amount,
+        worth,
+        percentageWorthGainDrop,
+      });
+    }
+
+    const commodities: import("./syndicate.types.js").SyndicateCommodityStats[] = commoditiesRaw.map(
+      (c) => ({
+        ...c,
+        marketShare: totalWorth > 0 ? (c.worth / totalWorth) * 100 : 0,
+      }),
+    );
+
+    const rankGold = await this.leaderboards.getPlayerRank(syndicateId, "syndicate_gold");
+    const rankCommodity = await this.leaderboards.getPlayerRank(syndicateId, "syndicate_commodity_value");
+
+    let globalRank = 0;
+    if (rankGold !== null && rankCommodity !== null) {
+      globalRank = Math.min(rankGold, rankCommodity);
+    } else if (rankGold !== null) {
+      globalRank = rankGold;
+    } else if (rankCommodity !== null) {
+      globalRank = rankCommodity;
+    }
+
+    return {
+      name: meta.name ?? "",
+      globalRank,
+      activeBoost: idolLevel,
+      totalGold: bankGold,
+      totalMembers: members.length,
+      commodities,
+    };
   }
 
   async chatSend(userId: string, raw: unknown): Promise<{ ok: true }> {

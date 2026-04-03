@@ -63,6 +63,7 @@ function normalizeInbound(o: unknown): WsInboundMessage | null {
     type === "LEAVE_SYNDICATE" ||
     type === "DISBAND_SYNDICATE" ||
     type === "VIEW_SYNDICATE_MEMBER" ||
+    type === "VIEW_SYNDICATE_DASHBOARD" ||
     type === "VIEW_GOLD_BANK" ||
     type === "VIEW_COMMODITY_BANK" ||
     type === "VIEW_MEMBER_CONTRIBUTION" ||

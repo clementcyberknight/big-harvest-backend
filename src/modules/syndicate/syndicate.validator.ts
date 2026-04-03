@@ -23,6 +23,10 @@ export const acceptJoinSchema = z.object({
   userId: z.string().min(1).max(128),
 });
 
+export const viewSyndicateDashboardSchema = z.object({
+  syndicateId: z.string().min(1).max(64),
+});
+
 export const depositBankSchema = z.discriminatedUnion("kind", [
   z.object({
     requestId: requestIdSchema,

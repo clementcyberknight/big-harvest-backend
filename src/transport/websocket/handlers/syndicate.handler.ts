@@ -304,3 +304,18 @@ export async function handleViewMemberContribution(
     handleErr(ws, userId, e, "view member contribution failed");
   }
 }
+
+export async function handleViewSyndicateDashboard(
+  ws: WebSocket<WsUserData>,
+  payload: unknown,
+  syndicates: SyndicateService,
+): Promise<void> {
+  const userId = ws.getUserData().userId;
+  if (!(await consume(userId, ws))) return;
+  try {
+    const data = await syndicates.viewDashboard(userId, payload);
+    send(ws, { type: "VIEW_SYNDICATE_DASHBOARD_OK", data } satisfies WsOutboundMessage);
+  } catch (e) {
+    handleErr(ws, userId, e, "view syndicate dashboard failed");
+  }
+}

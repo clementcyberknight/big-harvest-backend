@@ -42,6 +42,7 @@ import {
   handleViewMemberContribution,
   handleViewSyndicate,
   handleViewSyndicateMember,
+  handleViewSyndicateDashboard,
 } from "./handlers/syndicate.handler.js";
 import { parseWsInbound, sendGameMessage } from "./ws.codec.js";
 import { serverNowMs } from "../../shared/utils/time.js";
@@ -168,6 +169,9 @@ export async function dispatchWsMessage(
       return;
     case "VIEW_MEMBER_CONTRIBUTION":
       await handleViewMemberContribution(ws, msg.payload, ctx.syndicates);
+      return;
+    case "VIEW_SYNDICATE_DASHBOARD":
+      await handleViewSyndicateDashboard(ws, msg.payload, ctx.syndicates);
       return;
     case "VIEW_LEADERBOARD":
       await handleViewLeaderboard(ws, msg.payload, ctx);
