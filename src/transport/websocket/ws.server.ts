@@ -236,6 +236,10 @@ export function createWsApp(ctx: WsAppContext) {
       const { userId, sessionId } = ws.getUserData();
       void ctx.syndicates.touchPresence(userId);
 
+      // uWebSockets `message` ArrayBuffer is invalidated after the synchronous execution returns.
+      // Since checking revocation is async, we must copy the buffer to preserve its contents.
+      const messageCopy = message.slice(0);
+
       // Re-check session revocation on every message to close connections
       // whose sessions were revoked mid-flight (e.g. token reuse detected).
       if (sessionId) {
@@ -252,7 +256,7 @@ export function createWsApp(ctx: WsAppContext) {
             ws.close();
             return;
           }
-          void dispatchWsMessage(ws, message, isBinary, ctx).catch((err) => {
+          void dispatchWsMessage(ws, messageCopy, isBinary, ctx).catch((err) => {
             logger.error({ err, userId }, "ws dispatch failed");
             try {
               sendGameMessage(ws, {
@@ -264,7 +268,7 @@ export function createWsApp(ctx: WsAppContext) {
           });
         }).catch((err) => {
           logger.error({ err, userId, sessionId }, "ws revocation check failed — allowing message");
-          void dispatchWsMessage(ws, message, isBinary, ctx).catch((dispatchErr) => {
+          void dispatchWsMessage(ws, messageCopy, isBinary, ctx).catch((dispatchErr) => {
             logger.error({ err: dispatchErr, userId }, "ws dispatch failed");
             try {
               sendGameMessage(ws, {
@@ -279,7 +283,7 @@ export function createWsApp(ctx: WsAppContext) {
       }
 
       // No sessionId (AUTH_DEV_BYPASS path) — dispatch directly.
-      void dispatchWsMessage(ws, message, isBinary, ctx).catch((err) => {
+      void dispatchWsMessage(ws, messageCopy, isBinary, ctx).catch((err) => {
         logger.error(
           { err, userId },
           "ws dispatch failed",
