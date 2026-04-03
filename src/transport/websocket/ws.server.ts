@@ -98,6 +98,10 @@ export function createWsApp(ctx: WsAppContext) {
         aborted = true;
       });
 
+      const secWebSocketKey = req.getHeader("sec-websocket-key");
+      const secWebSocketProtocol = req.getHeader("sec-websocket-protocol");
+      const secWebSocketExtensions = req.getHeader("sec-websocket-extensions");
+
       if (env.AUTH_DEV_BYPASS) {
         const q = req.getQuery("userId") ?? "";
         if (!q) {
@@ -150,9 +154,9 @@ export function createWsApp(ctx: WsAppContext) {
             }
             res.upgrade(
               { userId, sessionId },
-              req.getHeader("sec-websocket-key"),
-              req.getHeader("sec-websocket-protocol"),
-              req.getHeader("sec-websocket-extensions"),
+              secWebSocketKey,
+              secWebSocketProtocol,
+              secWebSocketExtensions,
               context,
             );
           })
@@ -173,9 +177,9 @@ export function createWsApp(ctx: WsAppContext) {
 
       res.upgrade(
         { userId },
-        req.getHeader("sec-websocket-key"),
-        req.getHeader("sec-websocket-protocol"),
-        req.getHeader("sec-websocket-extensions"),
+        secWebSocketKey,
+        secWebSocketProtocol,
+        secWebSocketExtensions,
         context,
       );
     },
